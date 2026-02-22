@@ -169,6 +169,29 @@ export function getDashboardHtml() {
   .unassigned-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
   .unassigned-section h3 { font-size: 14px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
 
+  /* Location Cards */
+  .loc-group { margin-bottom: 20px; }
+  .loc-group h3 { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .loc-group h3 .count { font-weight: 400; color: var(--text3); }
+  .loc-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 6px; display: flex; align-items: center; gap: 12px; }
+  .loc-card.running { border-left: 3px solid var(--green); }
+  .loc-card.idle { border-left: 3px solid var(--text3); }
+  .loc-card.archived { border-left: 3px solid var(--text3); opacity: 0.5; }
+  .loc-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .loc-status.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .loc-status.idle { background: var(--text3); }
+  .loc-status.archived { background: var(--text3); }
+  .loc-info { flex: 1; min-width: 0; }
+  .loc-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .loc-detail { display: flex; gap: 12px; font-size: 11px; color: var(--text2); margin-top: 2px; flex-wrap: wrap; }
+  .loc-detail span { display: inline-flex; align-items: center; gap: 3px; }
+  .loc-tags { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+  .loc-tag { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 500; }
+  .loc-tag.model { background: rgba(88,166,255,0.1); color: var(--accent); }
+  .loc-tag.perm { background: rgba(63,185,80,0.1); color: var(--green); }
+  .loc-tag.status-running { background: rgba(63,185,80,0.15); color: var(--green); }
+  .loc-tag.status-idle { background: var(--bg4); color: var(--text3); }
+
   /* Tab Navigation */
   .tab-bar { display: flex; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 500; color: var(--text2); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s; white-space: nowrap; font-family: inherit; }
@@ -308,12 +331,11 @@ export function getDashboardHtml() {
   <div id="tab-locations" class="tab-panel">
     <div class="section">
       <div class="section-header open">
-        <h2>Claude Locations</h2>
+        <h2>Claude Locations <span id="locCount" style="color:var(--text2);font-weight:400;font-size:13px"></span></h2>
+        <button class="btn btn-sm" onclick="loadSessions()">Refresh</button>
       </div>
       <div class="section-body open">
-        <div id="locationsList" style="color:var(--text2);font-size:13px;padding:24px 0;text-align:center">
-          <p style="margin-bottom:8px">Scanning for active Claude Code sessions...</p>
-        </div>
+        <div id="locationsList"></div>
       </div>
     </div>
   </div>
@@ -920,6 +942,92 @@ async function assignTaskToProject(taskId, projectId) {
   loadTaskList();
 }
 
+// ─── Locations (Sessions) ───
+let sessions = [];
+async function loadSessions() {
+  sessions = await api('/api/sessions');
+  renderLocations();
+}
+
+function renderLocations() {
+  const list = document.getElementById('locationsList');
+  const countEl = document.getElementById('locCount');
+  const badge = document.getElementById('locationBadge');
+  if (!list) return;
+
+  const running = sessions.filter(s => s.isRunning && !s.isArchived);
+  const recent = sessions.filter(s => !s.isRunning && !s.isArchived);
+  const archived = sessions.filter(s => s.isArchived);
+
+  if (badge) badge.textContent = running.length;
+  if (countEl) countEl.textContent = '(' + running.length + ' running, ' + sessions.length + ' total)';
+
+  if (sessions.length === 0) {
+    list.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:24px 0;text-align:center">' +
+      '<p>No Claude Code sessions found.</p>' +
+      '<p style="font-size:12px;color:var(--text3);margin-top:4px">Sessions from the Claude Desktop app will appear here.</p></div>';
+    return;
+  }
+
+  let html = '';
+
+  if (running.length > 0) {
+    html += '<div class="loc-group"><h3>\\ud83d\\udfe2 Running <span class="count">(' + running.length + ')</span></h3>' +
+      running.map(locCardHtml).join('') + '</div>';
+  }
+
+  if (recent.length > 0) {
+    html += '<div class="loc-group"><h3>\\u23f8\\ufe0f Recent <span class="count">(' + recent.length + ')</span></h3>' +
+      recent.slice(0, 20).map(locCardHtml).join('') +
+      (recent.length > 20 ? '<div style="font-size:11px;color:var(--text3);padding:4px 0">+ ' + (recent.length - 20) + ' more</div>' : '') +
+      '</div>';
+  }
+
+  if (archived.length > 0) {
+    html += '<div class="loc-group"><h3>\\ud83d\\udce6 Archived <span class="count">(' + archived.length + ')</span></h3>' +
+      archived.slice(0, 10).map(locCardHtml).join('') +
+      (archived.length > 10 ? '<div style="font-size:11px;color:var(--text3);padding:4px 0">+ ' + (archived.length - 10) + ' more</div>' : '') +
+      '</div>';
+  }
+
+  list.innerHTML = html;
+}
+
+function locCardHtml(s) {
+  const statusClass = s.isRunning ? 'running' : s.isArchived ? 'archived' : 'idle';
+  const statusLabel = s.isRunning ? 'Running' : s.isArchived ? 'Archived' : 'Idle';
+  const timeAgo = s.lastActivityAt ? relativeTime(s.lastActivityAt) : '';
+  const modelShort = (s.model || '').replace('claude-', '').replace(/-/g, ' ');
+
+  return '<div class="loc-card ' + statusClass + '">' +
+    '<span class="loc-status ' + statusClass + '"></span>' +
+    '<div class="loc-info">' +
+      '<div class="loc-title">' + esc(s.title || 'Untitled') + '</div>' +
+      '<div class="loc-detail">' +
+        '<span>\\ud83d\\udcc1 ' + esc(s.project || 'Unknown') + '</span>' +
+        '<span>' + esc(s.cwd || '') + '</span>' +
+        (timeAgo ? '<span>' + timeAgo + '</span>' : '') +
+      '</div>' +
+    '</div>' +
+    '<div class="loc-tags">' +
+      '<span class="loc-tag status-' + statusClass + '">' + statusLabel + '</span>' +
+      (modelShort ? '<span class="loc-tag model">' + esc(modelShort) + '</span>' : '') +
+      (s.permissionMode ? '<span class="loc-tag perm">' + esc(s.permissionMode) + '</span>' : '') +
+    '</div>' +
+  '</div>';
+}
+
+function relativeTime(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.floor(hrs / 24);
+  return days + 'd ago';
+}
+
 // ─── Usage Monitor ───
 async function loadUsage() {
   const data = await api('/api/usage');
@@ -1167,10 +1275,11 @@ async function loadSummary() {
 async function init() {
   initTabFromHash();
   window.addEventListener('hashchange', initTabFromHash);
-  await Promise.all([loadStatus(), loadTaskList(), loadProfiles(), loadProjectsList(), loadApiConfig(), loadUsage(), loadLog(), loadSummary()]);
+  await Promise.all([loadStatus(), loadTaskList(), loadProfiles(), loadProjectsList(), loadSessions(), loadApiConfig(), loadUsage(), loadLog(), loadSummary()]);
   // Poll every 5 seconds
   setInterval(() => { loadStatus(); loadTaskList(); }, 5000);
   setInterval(loadProjectsList, 30000);
+  setInterval(loadSessions, 15000);
   setInterval(loadLog, 10000);
   setInterval(loadUsage, 60000);
 }
