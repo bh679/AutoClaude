@@ -77,8 +77,32 @@ export function reorderTasks(orderedIds) {
 export function getNextApprovedTask() {
   const tasks = loadTasks();
   return tasks
-    .filter(t => t.approved && t.status === 'pending')
+    .filter(t => t.approved && t.status === 'pending' && areDependenciesMet(t, tasks))
     .sort((a, b) => (a.order || 0) - (b.order || 0))[0] || null;
+}
+
+export function areDependenciesMet(task, allTasks) {
+  if (!task.dependencies?.length) return true;
+  return task.dependencies.every(depId => {
+    const dep = allTasks.find(t => t.id === depId);
+    return dep && dep.status === 'completed';
+  });
+}
+
+export function detectCircularDeps(taskId, dependencies, allTasks) {
+  const visited = new Set();
+  const stack = [...dependencies];
+  while (stack.length > 0) {
+    const depId = stack.pop();
+    if (depId === taskId) return true; // circular
+    if (visited.has(depId)) continue;
+    visited.add(depId);
+    const dep = allTasks.find(t => t.id === depId);
+    if (dep?.dependencies?.length) {
+      stack.push(...dep.dependencies);
+    }
+  }
+  return false;
 }
 
 // ─── Permission Profiles ───

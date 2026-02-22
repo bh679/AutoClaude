@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { loadConfig, saveConfig } from './config.mjs';
-import { loadTasks, createTask, updateTask, deleteTask, reorderTasks, loadPermissions, createPermissionProfile, updatePermissionProfile, deletePermissionProfile } from './task-queue.mjs';
+import { loadTasks, createTask, updateTask, deleteTask, reorderTasks, loadPermissions, createPermissionProfile, updatePermissionProfile, deletePermissionProfile, detectCircularDeps } from './task-queue.mjs';
 import { listProjects, getProject, createProject, updateProject, deleteProject } from './projects.mjs';
 import { getRecentLogs } from './logger.mjs';
 import { log } from './logger.mjs';
@@ -84,6 +84,13 @@ export function startServer() {
       if (url.startsWith('/api/tasks/') && method === 'PUT') {
         const id = extractParam(url, '/api/tasks/');
         const body = await parseBody(req);
+        // Validate circular dependencies
+        if (body.dependencies?.length) {
+          const allTasks = loadTasks();
+          if (detectCircularDeps(id, body.dependencies, allTasks)) {
+            return json(res, { error: 'Circular dependency detected' }, 400);
+          }
+        }
         const task = updateTask(id, body);
         return task ? json(res, task) : json(res, { error: 'Not found' }, 404);
       }

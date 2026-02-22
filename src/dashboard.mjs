@@ -559,15 +559,22 @@ function renderTasks() {
     const projectHtml = proj ? '<span class="task-badge project">' + esc(proj.name) + '</span>' : '';
 
     // Dependency indicator
-    const deps = t.dependencies?.length ? t.dependencies.map(depId => {
-      const dep = tasks.find(x => x.id === depId);
-      return dep ? dep.title : 'Unknown';
-    }) : [];
     const waitingDeps = t.dependencies?.length ? t.dependencies.filter(depId => {
       const dep = tasks.find(x => x.id === depId);
       return dep && dep.status !== 'completed';
     }) : [];
-    const depsHtml = waitingDeps.length > 0 ? '<span class="task-badge waiting">Waiting on ' + waitingDeps.length + ' task' + (waitingDeps.length > 1 ? 's' : '') + '</span>' : '';
+    let depsHtml = '';
+    if (t.dependencies?.length) {
+      const depNames = t.dependencies.map(depId => {
+        const dep = tasks.find(x => x.id === depId);
+        const done = dep?.status === 'completed';
+        return '<span style="color:' + (done ? 'var(--green)' : 'var(--orange)') + ';cursor:pointer" onclick="event.stopPropagation();removeDep(\\'' + t.id + '\\',\\'' + depId + '\\')" title="Click to remove">' +
+          (done ? '\\u2713' : '\\u23f3') + ' ' + esc(dep?.title || 'Unknown') + '</span>';
+      });
+      depsHtml = '<span class="task-badge waiting" title="' + esc(depNames.length + ' dependencies') + '">' +
+        (waitingDeps.length > 0 ? 'Waiting on ' + waitingDeps.length : 'Deps met') +
+        '</span>';
+    }
 
     // Session info
     let sessionHtml = '';
@@ -626,7 +633,20 @@ function renderTasks() {
               'onchange="updateTaskField(\\'' + t.id + '\\', \\'subagentLevel\\', parseFloat(this.value))">' +
             '<span class="slider-label">' + subagentLabel(t.subagentLevel ?? 0.5) + '</span>' +
           '</div>' +
+          '<select onchange="addDep(\\'' + t.id + '\\', this.value); this.value=\\'\\';" style="font-size:11px">' +
+            '<option value="">+ Dep...</option>' +
+            tasks.filter(o => o.id !== t.id && !(t.dependencies || []).includes(o.id)).map(o =>
+              '<option value="' + o.id + '">' + esc(o.title) + '</option>'
+            ).join('') +
+          '</select>' +
         '</div>' +
+        (t.dependencies?.length ? '<div class="stats-row" style="margin-top:4px">' +
+          t.dependencies.map(depId => {
+            const dep = tasks.find(x => x.id === depId);
+            const done = dep?.status === 'completed';
+            return '<span style="cursor:pointer;color:' + (done ? 'var(--green)' : 'var(--orange)') + '" onclick="removeDep(\\'' + t.id + '\\',\\'' + depId + '\\')" title="Click to remove dependency">' +
+              (done ? '\\u2713' : '\\u23f3') + ' ' + esc(dep?.title || 'Unknown') + ' \\u00d7</span>';
+          }).join('') + '</div>' : '') +
         sessionHtml +
         statsHtml +
       '</div>' +
@@ -659,6 +679,23 @@ async function updateTaskField(id, field, value) {
 async function removeTask(id) {
   if (!confirm('Delete this task?')) return;
   await api('/api/tasks/' + id, { method: 'DELETE' });
+  loadTaskList();
+}
+
+async function addDep(taskId, depId) {
+  if (!depId) return;
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const deps = [...(task.dependencies || []), depId];
+  await api('/api/tasks/' + taskId, { method: 'PUT', body: { dependencies: deps } });
+  loadTaskList();
+}
+
+async function removeDep(taskId, depId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const deps = (task.dependencies || []).filter(d => d !== depId);
+  await api('/api/tasks/' + taskId, { method: 'PUT', body: { dependencies: deps } });
   loadTaskList();
 }
 
