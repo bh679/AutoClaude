@@ -126,6 +126,16 @@ export function getDashboardHtml() {
   /* Delete btn on card */
   .task-delete { color: var(--text3); cursor: pointer; padding: 4px; font-size: 14px; transition: color 0.15s; }
   .task-delete:hover { color: var(--red); }
+
+  /* Tab Navigation */
+  .tab-bar { display: flex; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 500; color: var(--text2); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s; white-space: nowrap; font-family: inherit; }
+  .tab-btn:hover { color: var(--text); background: var(--bg3); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn .tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bg4); font-size: 11px; margin-left: 6px; color: var(--text2); }
+  .tab-btn.active .tab-badge { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
 </style>
 </head>
 <body>
@@ -144,87 +154,130 @@ export function getDashboardHtml() {
   </div>
 </div>
 
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="tasks" onclick="switchTab('tasks')">Tasks<span id="taskBadge" class="tab-badge">0</span></button>
+  <button class="tab-btn" data-tab="projects" onclick="switchTab('projects')">Projects</button>
+  <button class="tab-btn" data-tab="locations" onclick="switchTab('locations')">Locations<span id="locationBadge" class="tab-badge">0</span></button>
+  <button class="tab-btn" data-tab="usage" onclick="switchTab('usage')">Usage</button>
+  <button class="tab-btn" data-tab="permissions" onclick="switchTab('permissions')">Permissions</button>
+</div>
+
 <div class="container">
-  <!-- Task Queue -->
-  <div class="section">
-    <div class="section-header open" onclick="toggleSection(this)">
-      <h2><span class="chevron">&#9654;</span> Task Queue <span id="taskCount" style="color:var(--text2);font-weight:400"></span></h2>
-      <button class="btn btn-sm" onclick="event.stopPropagation();toggleAddForm()">+ Add Task</button>
-    </div>
-    <div class="section-body open">
-      <div id="taskList"></div>
-      <div id="addForm" class="add-form">
-        <input id="newTitle" placeholder="Task title" />
-        <textarea id="newPrompt" placeholder="Detailed prompt / instructions for Claude..."></textarea>
-        <div class="form-row">
-          <label>Directory</label>
-          <input id="newDir" placeholder="/path/to/project" />
-        </div>
-        <div class="form-row">
-          <label>Profile</label>
-          <select id="newProfile"></select>
-        </div>
-        <div class="form-row">
-          <label>Sub-agents</label>
-          <div class="slider-group">
-            <input type="range" id="newSubagent" min="0" max="1" step="0.05" value="0.5" oninput="document.getElementById('newSubagentLabel').textContent=subagentLabel(this.value)">
-            <span id="newSubagentLabel" class="slider-label">Moderate</span>
+  <!-- Tasks Tab -->
+  <div id="tab-tasks" class="tab-panel active">
+    <div class="section">
+      <div class="section-header open" onclick="toggleSection(this)">
+        <h2><span class="chevron">&#9654;</span> Task Queue <span id="taskCount" style="color:var(--text2);font-weight:400"></span></h2>
+        <button class="btn btn-sm" onclick="event.stopPropagation();toggleAddForm()">+ Add Task</button>
+      </div>
+      <div class="section-body open">
+        <div id="taskList"></div>
+        <div id="addForm" class="add-form">
+          <input id="newTitle" placeholder="Task title" />
+          <textarea id="newPrompt" placeholder="Detailed prompt / instructions for Claude..."></textarea>
+          <div class="form-row">
+            <label>Directory</label>
+            <input id="newDir" placeholder="/path/to/project" />
+          </div>
+          <div class="form-row">
+            <label>Profile</label>
+            <select id="newProfile"></select>
+          </div>
+          <div class="form-row">
+            <label>Sub-agents</label>
+            <div class="slider-group">
+              <input type="range" id="newSubagent" min="0" max="1" step="0.05" value="0.5" oninput="document.getElementById('newSubagentLabel').textContent=subagentLabel(this.value)">
+              <span id="newSubagentLabel" class="slider-label">Moderate</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn" onclick="toggleAddForm()">Cancel</button>
+            <button class="btn btn-primary" onclick="addTask()">Add Task</button>
           </div>
         </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end">
-          <button class="btn" onclick="toggleAddForm()">Cancel</button>
-          <button class="btn btn-primary" onclick="addTask()">Add Task</button>
+      </div>
+    </div>
+
+    <!-- Activity Log (inside Tasks tab) -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <h2><span class="chevron">&#9654;</span> Activity Log</h2>
+      </div>
+      <div class="section-body">
+        <div id="logOutput" class="log-output">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Overnight Summary (inside Tasks tab) -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <h2><span class="chevron">&#9654;</span> Overnight Summary</h2>
+      </div>
+      <div class="section-body">
+        <div id="summaryContent" class="summary-content">No summary available yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Projects Tab -->
+  <div id="tab-projects" class="tab-panel">
+    <div class="section">
+      <div class="section-header open">
+        <h2>Projects</h2>
+      </div>
+      <div class="section-body open">
+        <div id="projectsList" style="color:var(--text2);font-size:13px;padding:24px 0;text-align:center">
+          <p style="margin-bottom:8px">No projects configured yet.</p>
+          <p style="font-size:12px;color:var(--text3)">Projects group tasks by codebase and provide shared configuration. Coming soon.</p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Permission Profiles -->
-  <div class="section">
-    <div class="section-header" onclick="toggleSection(this)">
-      <h2><span class="chevron">&#9654;</span> Permission Profiles</h2>
-    </div>
-    <div class="section-body">
-      <div id="profileTabs" class="profile-tabs"></div>
-      <div id="profileEditor" class="profile-editor" style="display:none"></div>
-    </div>
-  </div>
-
-  <!-- Usage Monitor -->
-  <div class="section">
-    <div class="section-header" onclick="toggleSection(this)">
-      <h2><span class="chevron">&#9654;</span> Usage Monitor</h2>
-    </div>
-    <div class="section-body">
-      <div id="usageGrid" class="usage-grid"></div>
-      <div id="usageChart" class="usage-chart" style="display:none"></div>
-      <div class="setup-row">
-        <span style="color:var(--text2)">Session Cookie:</span>
-        <input type="password" id="sessionKeyInput" placeholder="Paste sessionKey cookie value" />
-        <input id="orgIdInput" placeholder="Org ID" style="max-width:200px" />
-        <button class="btn btn-sm" onclick="saveApiConfig()">Save</button>
-        <button class="btn btn-sm" onclick="refreshUsage()">Refresh</button>
+  <!-- Locations Tab -->
+  <div id="tab-locations" class="tab-panel">
+    <div class="section">
+      <div class="section-header open">
+        <h2>Claude Locations</h2>
+      </div>
+      <div class="section-body open">
+        <div id="locationsList" style="color:var(--text2);font-size:13px;padding:24px 0;text-align:center">
+          <p style="margin-bottom:8px">Scanning for active Claude Code sessions...</p>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Activity Log -->
-  <div class="section">
-    <div class="section-header" onclick="toggleSection(this)">
-      <h2><span class="chevron">&#9654;</span> Activity Log</h2>
-    </div>
-    <div class="section-body">
-      <div id="logOutput" class="log-output">Loading...</div>
+  <!-- Usage Tab -->
+  <div id="tab-usage" class="tab-panel">
+    <div class="section">
+      <div class="section-header open">
+        <h2>Usage Monitor</h2>
+      </div>
+      <div class="section-body open">
+        <div id="usageGrid" class="usage-grid"></div>
+        <div id="usageChart" class="usage-chart" style="display:none"></div>
+        <div class="setup-row">
+          <span style="color:var(--text2)">Session Cookie:</span>
+          <input type="password" id="sessionKeyInput" placeholder="Paste sessionKey cookie value" />
+          <input id="orgIdInput" placeholder="Org ID" style="max-width:200px" />
+          <button class="btn btn-sm" onclick="saveApiConfig()">Save</button>
+          <button class="btn btn-sm" onclick="refreshUsage()">Refresh</button>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Overnight Summary -->
-  <div class="section">
-    <div class="section-header" onclick="toggleSection(this)">
-      <h2><span class="chevron">&#9654;</span> Overnight Summary</h2>
-    </div>
-    <div class="section-body">
-      <div id="summaryContent" class="summary-content">No summary available yet.</div>
+  <!-- Permissions Tab -->
+  <div id="tab-permissions" class="tab-panel">
+    <div class="section">
+      <div class="section-header open">
+        <h2>Permission Profiles</h2>
+      </div>
+      <div class="section-body open">
+        <div id="profileTabs" class="profile-tabs"></div>
+        <div id="profileEditor" class="profile-editor" style="display:none"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -235,6 +288,30 @@ let tasks = [];
 let profiles = {};
 let activeProfileKey = null;
 let dragSrcId = null;
+
+// ─── Tab Navigation ───
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  const panel = document.getElementById('tab-' + tabId);
+  const btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+  history.replaceState(null, '', '#' + tabId);
+}
+
+function initTabFromHash() {
+  const hash = location.hash.replace('#', '');
+  const validTabs = ['tasks', 'projects', 'locations', 'usage', 'permissions'];
+  if (hash && validTabs.includes(hash)) {
+    switchTab(hash);
+  }
+}
+
+function updateTabBadges() {
+  const taskBadge = document.getElementById('taskBadge');
+  if (taskBadge) taskBadge.textContent = tasks.length;
+}
 
 // ─── Time Input ───
 function validateTime(input) {
@@ -304,6 +381,7 @@ function renderTasks() {
   const pending = tasks.filter(t => t.status === 'pending').length;
   const approved = tasks.filter(t => t.approved && t.status === 'pending').length;
   count.textContent = '(' + approved + ' approved / ' + tasks.length + ' total)';
+  updateTabBadges();
 
   list.innerHTML = tasks.map(t => {
     const statusClass = t.status === 'running' ? 'running' : t.status === 'completed' ? 'completed' : t.status === 'failed' ? 'failed' : '';
@@ -687,6 +765,8 @@ async function loadSummary() {
 
 // ─── Init & Polling ───
 async function init() {
+  initTabFromHash();
+  window.addEventListener('hashchange', initTabFromHash);
   await Promise.all([loadStatus(), loadTaskList(), loadProfiles(), loadApiConfig(), loadUsage(), loadLog(), loadSummary()]);
   // Poll every 5 seconds
   setInterval(() => { loadStatus(); loadTaskList(); }, 5000);
