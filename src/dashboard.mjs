@@ -136,6 +136,39 @@ export function getDashboardHtml() {
   .task-session code { background: var(--bg4); padding: 1px 6px; border-radius: 3px; font-family: 'SF Mono', Monaco, monospace; cursor: pointer; transition: background 0.15s; }
   .task-session code:hover { background: var(--accent); color: #000; }
 
+  /* Project Cards */
+  .project-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+  .project-card.active { border-left: 3px solid var(--green); }
+  .project-card.idle { border-left: 3px solid var(--orange); }
+  .project-card.complete { border-left: 3px solid var(--accent); }
+  .project-card.empty { border-left: 3px solid var(--text3); }
+  .project-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .project-name { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .project-name .activity-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .project-desc { font-size: 13px; color: var(--text2); margin-bottom: 10px; }
+  .project-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .project-meta-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 11px; background: var(--bg3); color: var(--text2); }
+  .project-meta-tag.dir { color: var(--accent); background: rgba(88,166,255,0.08); }
+  .project-meta-tag.ssh { color: var(--purple); background: rgba(188,140,255,0.08); }
+  .project-meta-tag.md { color: var(--orange); background: rgba(210,153,34,0.08); }
+  .project-meta-tag.repo { color: var(--green); background: rgba(63,185,80,0.08); }
+  .project-tasks { border-top: 1px solid var(--border); padding-top: 10px; }
+  .project-tasks h4 { font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 6px; }
+  .project-task-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+  .project-task-row .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .project-task-row .dot.pending { background: var(--text3); }
+  .project-task-row .dot.running { background: var(--orange); }
+  .project-task-row .dot.completed { background: var(--green); }
+  .project-task-row .dot.failed { background: var(--red); }
+  .project-actions { display: flex; gap: 6px; align-items: center; }
+  .project-actions .btn-sm { padding: 2px 8px; font-size: 11px; }
+  .add-project-form { background: var(--bg2); border: 1px dashed var(--border); border-radius: var(--radius); padding: 16px; margin-top: 8px; display: none; }
+  .add-project-form.open { display: block; }
+  .add-project-form input, .add-project-form textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 4px; font-size: 13px; font-family: inherit; margin-bottom: 8px; }
+  .add-project-form textarea { min-height: 60px; resize: vertical; }
+  .unassigned-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .unassigned-section h3 { font-size: 14px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
+
   /* Tab Navigation */
   .tab-bar { display: flex; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 500; color: var(--text2); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s; white-space: nowrap; font-family: inherit; }
@@ -165,7 +198,7 @@ export function getDashboardHtml() {
 
 <div class="tab-bar">
   <button class="tab-btn active" data-tab="tasks" onclick="switchTab('tasks')">Tasks<span id="taskBadge" class="tab-badge">0</span></button>
-  <button class="tab-btn" data-tab="projects" onclick="switchTab('projects')">Projects</button>
+  <button class="tab-btn" data-tab="projects" onclick="switchTab('projects')">Projects<span id="projectBadge" class="tab-badge">0</span></button>
   <button class="tab-btn" data-tab="locations" onclick="switchTab('locations')">Locations<span id="locationBadge" class="tab-badge">0</span></button>
   <button class="tab-btn" data-tab="usage" onclick="switchTab('usage')">Usage</button>
   <button class="tab-btn" data-tab="permissions" onclick="switchTab('permissions')">Permissions</button>
@@ -237,12 +270,36 @@ export function getDashboardHtml() {
     <div class="section">
       <div class="section-header open">
         <h2>Projects</h2>
+        <button class="btn btn-sm" onclick="toggleProjectForm()">+ New Project</button>
       </div>
       <div class="section-body open">
-        <div id="projectsList" style="color:var(--text2);font-size:13px;padding:24px 0;text-align:center">
-          <p style="margin-bottom:8px">No projects configured yet.</p>
-          <p style="font-size:12px;color:var(--text3)">Projects group tasks by codebase and provide shared configuration. Coming soon.</p>
+        <div id="addProjectForm" class="add-project-form">
+          <input id="projName" placeholder="Project name" />
+          <textarea id="projDesc" placeholder="Description (optional)"></textarea>
+          <div class="form-row">
+            <label>Main Dir</label>
+            <input id="projDir" placeholder="/path/to/project" />
+          </div>
+          <div class="form-row">
+            <label>SSH Locs</label>
+            <input id="projSsh" placeholder="user@host:/path, ... (comma-separated)" />
+          </div>
+          <div class="form-row">
+            <label>CLAUDE.md</label>
+            <input id="projMd" placeholder="/path/to/CLAUDE.md, ... (comma-separated)" />
+          </div>
+          <div class="form-row">
+            <label>GitHub</label>
+            <input id="projRepos" placeholder="owner/repo, ... (comma-separated)" />
+          </div>
+          <input type="hidden" id="projEditId" value="" />
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn" onclick="toggleProjectForm()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveProject()">Save Project</button>
+          </div>
         </div>
+        <div id="projectCards"></div>
+        <div id="unassignedTasks" class="unassigned-section" style="display:none"></div>
       </div>
     </div>
   </div>
@@ -371,6 +428,8 @@ function initTabFromHash() {
 function updateTabBadges() {
   const taskBadge = document.getElementById('taskBadge');
   if (taskBadge) taskBadge.textContent = tasks.length;
+  const projBadge = document.getElementById('projectBadge');
+  if (projBadge) projBadge.textContent = projects.length;
 }
 
 // ─── Time Input ───
@@ -695,6 +754,7 @@ function populateProfileDropdowns() {
 async function loadProjectsList() {
   projects = await api('/api/projects');
   populateProjectDropdowns();
+  renderProjectCards();
 }
 
 function populateProjectDropdowns() {
@@ -702,6 +762,162 @@ function populateProjectDropdowns() {
   if (!sel) return;
   sel.innerHTML = '<option value="">\\u2014 None \\u2014</option>' +
     projects.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
+}
+
+function toggleProjectForm(editProject) {
+  const form = document.getElementById('addProjectForm');
+  const editId = document.getElementById('projEditId');
+  if (editProject) {
+    document.getElementById('projName').value = editProject.name || '';
+    document.getElementById('projDesc').value = editProject.description || '';
+    document.getElementById('projDir').value = editProject.mainDir || '';
+    document.getElementById('projSsh').value = (editProject.sshLocations || []).join(', ');
+    document.getElementById('projMd').value = (editProject.claudeMdPaths || []).join(', ');
+    document.getElementById('projRepos').value = (editProject.githubRepos || []).join(', ');
+    editId.value = editProject.id;
+    form.classList.add('open');
+  } else if (form.classList.contains('open') && !editId.value) {
+    form.classList.remove('open');
+  } else {
+    document.getElementById('projName').value = '';
+    document.getElementById('projDesc').value = '';
+    document.getElementById('projDir').value = '';
+    document.getElementById('projSsh').value = '';
+    document.getElementById('projMd').value = '';
+    document.getElementById('projRepos').value = '';
+    editId.value = '';
+    form.classList.toggle('open');
+  }
+}
+
+async function saveProject() {
+  const name = document.getElementById('projName').value.trim();
+  if (!name) return alert('Project name is required');
+  const body = {
+    name,
+    description: document.getElementById('projDesc').value.trim(),
+    mainDir: document.getElementById('projDir').value.trim(),
+    sshLocations: document.getElementById('projSsh').value.split(',').map(s => s.trim()).filter(Boolean),
+    claudeMdPaths: document.getElementById('projMd').value.split(',').map(s => s.trim()).filter(Boolean),
+    githubRepos: document.getElementById('projRepos').value.split(',').map(s => s.trim()).filter(Boolean),
+  };
+  const editId = document.getElementById('projEditId').value;
+  if (editId) {
+    await api('/api/projects/' + editId, { method: 'PUT', body });
+  } else {
+    await api('/api/projects', { method: 'POST', body });
+  }
+  document.getElementById('addProjectForm').classList.remove('open');
+  document.getElementById('projEditId').value = '';
+  loadProjectsList();
+}
+
+async function deleteProject(id) {
+  const proj = projects.find(p => p.id === id);
+  if (!confirm('Delete project "' + (proj?.name || id) + '"? Tasks will be unassigned.')) return;
+  await api('/api/projects/' + id, { method: 'DELETE' });
+  loadProjectsList();
+  loadTaskList();
+}
+
+function renderProjectCards() {
+  const container = document.getElementById('projectCards');
+  const unassigned = document.getElementById('unassignedTasks');
+  if (!container) return;
+  updateTabBadges();
+
+  if (projects.length === 0) {
+    container.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:24px 0;text-align:center">' +
+      '<p style="margin-bottom:8px">No projects configured yet.</p>' +
+      '<p style="font-size:12px;color:var(--text3)">Click "+ New Project" to group tasks by codebase.</p></div>';
+    unassigned.style.display = 'none';
+    return;
+  }
+
+  const activityColors = { active: 'var(--green)', idle: 'var(--orange)', complete: 'var(--accent)', empty: 'var(--text3)' };
+  const activityLabels = { active: 'Active', idle: 'Idle', complete: 'Complete', empty: 'No tasks' };
+
+  container.innerHTML = projects.map(p => {
+    const color = activityColors[p.activityStatus] || 'var(--text3)';
+    const label = activityLabels[p.activityStatus] || 'Unknown';
+    const ptasks = p.tasks || [];
+
+    // Meta tags
+    let metaHtml = '';
+    if (p.mainDir) metaHtml += '<span class="project-meta-tag dir">\\ud83d\\udcc1 ' + esc(p.mainDir) + '</span>';
+    (p.sshLocations || []).forEach(s => { metaHtml += '<span class="project-meta-tag ssh">\\ud83d\\udd17 ' + esc(s) + '</span>'; });
+    (p.claudeMdPaths || []).forEach(m => { metaHtml += '<span class="project-meta-tag md">\\ud83d\\udcdd ' + esc(m.split('/').pop()) + '</span>'; });
+    (p.githubRepos || []).forEach(r => {
+      const url = r.startsWith('http') ? r : 'https://github.com/' + r;
+      const display = r.replace(/^https?:\\/\\/github\\.com\\//, '');
+      metaHtml += '<a class="project-meta-tag repo" href="' + esc(url) + '" target="_blank" style="text-decoration:none;cursor:pointer">\\u2693 ' + esc(display) + '</a>';
+    });
+
+    // Task list
+    let tasksHtml = '';
+    if (ptasks.length > 0) {
+      const running = ptasks.filter(t => t.status === 'running');
+      const pending = ptasks.filter(t => t.status === 'pending');
+      const done = ptasks.filter(t => t.status === 'completed');
+      const failed = ptasks.filter(t => t.status === 'failed');
+      const ordered = [...running, ...pending, ...failed, ...done];
+      tasksHtml = '<div class="project-tasks"><h4>' + ptasks.length + ' task' + (ptasks.length !== 1 ? 's' : '') +
+        ' \\u2014 ' + running.length + ' running, ' + pending.length + ' pending, ' + done.length + ' done' +
+        (failed.length ? ', ' + failed.length + ' failed' : '') + '</h4>' +
+        ordered.slice(0, 10).map(t =>
+          '<div class="project-task-row">' +
+            '<span class="dot ' + t.status + '"></span>' +
+            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.title) + '</span>' +
+            (t.approved ? '<span style="color:var(--green);font-size:10px">\\u2713</span>' : '<span style="color:var(--text3);font-size:10px">\\u2717</span>') +
+          '</div>'
+        ).join('') +
+        (ordered.length > 10 ? '<div style="font-size:11px;color:var(--text3);margin-top:4px">+ ' + (ordered.length - 10) + ' more</div>' : '') +
+        '</div>';
+    }
+
+    return '<div class="project-card ' + p.activityStatus + '">' +
+      '<div class="project-header">' +
+        '<div class="project-name"><span class="activity-dot" style="background:' + color + '"></span> ' + esc(p.name) + ' <span style="font-size:11px;font-weight:400;color:' + color + '">' + label + '</span></div>' +
+        '<div class="project-actions">' +
+          '<button class="btn btn-sm" onclick="editProject(\\'' + p.id + '\\')">Edit</button>' +
+          '<button class="btn btn-sm btn-danger" onclick="deleteProject(\\'' + p.id + '\\')">\\u00d7</button>' +
+        '</div>' +
+      '</div>' +
+      (p.description ? '<div class="project-desc">' + esc(p.description) + '</div>' : '') +
+      (metaHtml ? '<div class="project-meta">' + metaHtml + '</div>' : '') +
+      tasksHtml +
+    '</div>';
+  }).join('');
+
+  // Unassigned tasks section
+  const unassignedTasks = tasks.filter(t => !t.project);
+  if (unassignedTasks.length > 0) {
+    unassigned.style.display = 'block';
+    unassigned.innerHTML = '<h3>Unassigned Tasks (' + unassignedTasks.length + ')</h3>' +
+      unassignedTasks.map(t =>
+        '<div class="project-task-row" style="padding:6px 0">' +
+          '<span class="dot ' + t.status + '"></span>' +
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.title) + '</span>' +
+          '<select style="font-size:11px;padding:2px 6px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:4px" onchange="assignTaskToProject(\\'' + t.id + '\\', this.value)">' +
+            '<option value="">Assign to...</option>' +
+            projects.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('') +
+          '</select>' +
+        '</div>'
+      ).join('');
+  } else {
+    unassigned.style.display = 'none';
+  }
+}
+
+function editProject(id) {
+  const proj = projects.find(p => p.id === id);
+  if (proj) toggleProjectForm(proj);
+}
+
+async function assignTaskToProject(taskId, projectId) {
+  await api('/api/tasks/' + taskId, { method: 'PUT', body: { project: projectId || null } });
+  loadProjectsList();
+  loadTaskList();
 }
 
 // ─── Usage Monitor ───
