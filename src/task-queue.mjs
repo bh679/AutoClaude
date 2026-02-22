@@ -19,7 +19,7 @@ export function saveTasks(tasks) {
   writeFileSync(config.paths.taskFile, JSON.stringify(tasks, null, 2));
 }
 
-export function createTask({ title, prompt, dir, permissionProfile = 'full-auto', subagentLevel = 0.5 }) {
+export function createTask({ title, prompt, dir, project = null, dependencies = [], permissionProfile = 'full-auto', subagentLevel = 0.5 }) {
   const tasks = loadTasks();
   const maxOrder = tasks.reduce((max, t) => Math.max(max, t.order || 0), 0);
   const task = {
@@ -27,6 +27,8 @@ export function createTask({ title, prompt, dir, permissionProfile = 'full-auto'
     title,
     prompt,
     dir: dir || process.cwd(),
+    project,
+    dependencies,
     status: 'pending',
     approved: false,
     order: maxOrder + 1,

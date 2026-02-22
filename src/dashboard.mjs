@@ -127,6 +127,15 @@ export function getDashboardHtml() {
   .task-delete { color: var(--text3); cursor: pointer; padding: 4px; font-size: 14px; transition: color 0.15s; }
   .task-delete:hover { color: var(--red); }
 
+  /* Task enhancements */
+  .task-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .task-badge.project { background: rgba(88,166,255,0.12); color: var(--accent); }
+  .task-badge.queue { background: var(--bg4); color: var(--text2); }
+  .task-badge.waiting { background: rgba(210,153,34,0.12); color: var(--orange); }
+  .task-session { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text3); margin-top: 4px; }
+  .task-session code { background: var(--bg4); padding: 1px 6px; border-radius: 3px; font-family: 'SF Mono', Monaco, monospace; cursor: pointer; transition: background 0.15s; }
+  .task-session code:hover { background: var(--accent); color: #000; }
+
   /* Tab Navigation */
   .tab-bar { display: flex; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 500; color: var(--text2); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s; white-space: nowrap; font-family: inherit; }
@@ -178,6 +187,10 @@ export function getDashboardHtml() {
           <div class="form-row">
             <label>Directory</label>
             <input id="newDir" placeholder="/path/to/project" />
+          </div>
+          <div class="form-row">
+            <label>Project</label>
+            <select id="newProject"><option value="">— None —</option></select>
           </div>
           <div class="form-row">
             <label>Profile</label>
@@ -286,6 +299,7 @@ export function getDashboardHtml() {
 const API = '';
 let tasks = [];
 let profiles = {};
+let projects = [];
 let activeProfileKey = null;
 let dragSrcId = null;
 
@@ -383,10 +397,39 @@ function renderTasks() {
   count.textContent = '(' + approved + ' approved / ' + tasks.length + ' total)';
   updateTabBadges();
 
-  list.innerHTML = tasks.map(t => {
+  const pendingTasks = tasks.filter(t => t.status === 'pending');
+  list.innerHTML = tasks.map((t, idx) => {
     const statusClass = t.status === 'running' ? 'running' : t.status === 'completed' ? 'completed' : t.status === 'failed' ? 'failed' : '';
     const approveClass = t.approved ? 'approved' : 'unapproved';
     const approveText = t.approved ? '\\u2713 Approved' : '\\u2717 Unapproved';
+
+    // Queue position for pending tasks
+    const queuePos = t.status === 'pending' ? pendingTasks.indexOf(t) + 1 : 0;
+    const queueHtml = queuePos > 0 ? '<span class="task-badge queue">#' + queuePos + ' of ' + pendingTasks.length + '</span>' : '';
+
+    // Project badge
+    const proj = t.project ? projects.find(p => p.id === t.project) : null;
+    const projectHtml = proj ? '<span class="task-badge project">' + esc(proj.name) + '</span>' : '';
+
+    // Dependency indicator
+    const deps = t.dependencies?.length ? t.dependencies.map(depId => {
+      const dep = tasks.find(x => x.id === depId);
+      return dep ? dep.title : 'Unknown';
+    }) : [];
+    const waitingDeps = t.dependencies?.length ? t.dependencies.filter(depId => {
+      const dep = tasks.find(x => x.id === depId);
+      return dep && dep.status !== 'completed';
+    }) : [];
+    const depsHtml = waitingDeps.length > 0 ? '<span class="task-badge waiting">Waiting on ' + waitingDeps.length + ' task' + (waitingDeps.length > 1 ? 's' : '') + '</span>' : '';
+
+    // Session info
+    let sessionHtml = '';
+    if (t.sessionId) {
+      sessionHtml = '<div class="task-session">' +
+        '<span>Session:</span>' +
+        '<code onclick="copyResume(\\'' + t.sessionId + '\\')" title="Click to copy resume command">' + t.sessionId.slice(0, 8) + '...</code>' +
+      '</div>';
+    }
 
     let statsHtml = '';
     if (t.stats) {
@@ -407,7 +450,10 @@ function renderTasks() {
       '<div class="drag-handle">\\u2630</div>' +
       '<div class="task-content">' +
         '<div class="task-top">' +
-          '<span class="task-title">' + esc(t.title) + '</span>' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+            '<span class="task-title">' + esc(t.title) + '</span>' +
+            queueHtml + projectHtml + depsHtml +
+          '</div>' +
           '<div style="display:flex;gap:6px;align-items:center">' +
             '<span class="approve-btn ' + approveClass + '" onclick="toggleApprove(\\'' + t.id + '\\')">' + approveText + '</span>' +
             '<span class="task-delete" onclick="removeTask(\\'' + t.id + '\\')" title="Delete">&times;</span>' +
@@ -419,6 +465,10 @@ function renderTasks() {
         '</div>' +
         '<div class="task-prompt">' + esc(t.prompt || '') + '</div>' +
         '<div class="task-controls">' +
+          '<select onchange="updateTaskField(\\'' + t.id + '\\', \\'project\\', this.value||null)">' +
+            '<option value="">— No Project —</option>' +
+            projects.map(p => '<option value="' + p.id + '"' + (p.id === t.project ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
+          '</select>' +
           '<select onchange="updateTaskField(\\'' + t.id + '\\', \\'permissionProfile\\', this.value)">' +
             Object.keys(profiles).map(k => '<option value="' + k + '"' + (k === t.permissionProfile ? ' selected' : '') + '>' + esc(profiles[k]?.name || k) + '</option>').join('') +
           '</select>' +
@@ -430,6 +480,7 @@ function renderTasks() {
             '<span class="slider-label">' + subagentLabel(t.subagentLevel ?? 0.5) + '</span>' +
           '</div>' +
         '</div>' +
+        sessionHtml +
         statsHtml +
       '</div>' +
     '</div>';
@@ -437,6 +488,14 @@ function renderTasks() {
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function copyResume(sessionId) {
+  navigator.clipboard.writeText('claude --resume ' + sessionId);
+  const el = event.target;
+  const orig = el.textContent;
+  el.textContent = 'Copied!';
+  setTimeout(() => { el.textContent = orig; }, 1500);
+}
 
 async function toggleApprove(id) {
   const t = tasks.find(x => x.id === id);
@@ -464,11 +523,12 @@ async function addTask() {
   const title = document.getElementById('newTitle').value.trim();
   const prompt = document.getElementById('newPrompt').value.trim();
   const dir = document.getElementById('newDir').value.trim();
+  const project = document.getElementById('newProject').value || null;
   const profile = document.getElementById('newProfile').value;
   const subagentLevel = parseFloat(document.getElementById('newSubagent').value);
   if (!title) return alert('Title required');
   if (!prompt) return alert('Prompt required');
-  await api('/api/tasks', { method: 'POST', body: { title, prompt, dir, permissionProfile: profile, subagentLevel } });
+  await api('/api/tasks', { method: 'POST', body: { title, prompt, dir, project, permissionProfile: profile, subagentLevel } });
   document.getElementById('newTitle').value = '';
   document.getElementById('newPrompt').value = '';
   document.getElementById('newDir').value = '';
@@ -583,6 +643,19 @@ function populateProfileDropdowns() {
     if (!sel) continue;
     sel.innerHTML = Object.keys(profiles).map(k => '<option value="' + k + '">' + esc(profiles[k].name || k) + '</option>').join('');
   }
+}
+
+// ─── Projects ───
+async function loadProjectsList() {
+  projects = await api('/api/projects');
+  populateProjectDropdowns();
+}
+
+function populateProjectDropdowns() {
+  const sel = document.getElementById('newProject');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">\\u2014 None \\u2014</option>' +
+    projects.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
 }
 
 // ─── Usage Monitor ───
@@ -767,9 +840,10 @@ async function loadSummary() {
 async function init() {
   initTabFromHash();
   window.addEventListener('hashchange', initTabFromHash);
-  await Promise.all([loadStatus(), loadTaskList(), loadProfiles(), loadApiConfig(), loadUsage(), loadLog(), loadSummary()]);
+  await Promise.all([loadStatus(), loadTaskList(), loadProfiles(), loadProjectsList(), loadApiConfig(), loadUsage(), loadLog(), loadSummary()]);
   // Poll every 5 seconds
   setInterval(() => { loadStatus(); loadTaskList(); }, 5000);
+  setInterval(loadProjectsList, 30000);
   setInterval(loadLog, 10000);
   setInterval(loadUsage, 60000);
 }
