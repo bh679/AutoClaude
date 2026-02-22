@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { loadConfig, saveConfig } from './config.mjs';
 import { loadTasks, createTask, updateTask, deleteTask, reorderTasks, loadPermissions, createPermissionProfile, updatePermissionProfile, deletePermissionProfile } from './task-queue.mjs';
+import { listProjects, getProject, createProject, updateProject, deleteProject } from './projects.mjs';
 import { getRecentLogs } from './logger.mjs';
 import { log } from './logger.mjs';
 import { getLatestSummary } from './summary.mjs';
@@ -109,6 +110,31 @@ export function startServer() {
       if (url.startsWith('/api/permissions/') && method === 'DELETE') {
         const key = extractParam(url, '/api/permissions/');
         return deletePermissionProfile(key) ? json(res, { ok: true }) : json(res, { error: 'Not found' }, 404);
+      }
+
+      // ─── Projects ───
+      if (url === '/api/projects' && method === 'GET') {
+        return json(res, listProjects());
+      }
+      if (url === '/api/projects' && method === 'POST') {
+        const body = await parseBody(req);
+        const project = createProject(body);
+        return json(res, project, 201);
+      }
+      if (url.startsWith('/api/projects/') && method === 'GET') {
+        const id = extractParam(url, '/api/projects/');
+        const project = getProject(id);
+        return project ? json(res, project) : json(res, { error: 'Not found' }, 404);
+      }
+      if (url.startsWith('/api/projects/') && method === 'PUT') {
+        const id = extractParam(url, '/api/projects/');
+        const body = await parseBody(req);
+        const project = updateProject(id, body);
+        return project ? json(res, project) : json(res, { error: 'Not found' }, 404);
+      }
+      if (url.startsWith('/api/projects/') && method === 'DELETE') {
+        const id = extractParam(url, '/api/projects/');
+        return deleteProject(id) ? json(res, { ok: true }) : json(res, { error: 'Not found' }, 404);
       }
 
       // ─── Status ───
