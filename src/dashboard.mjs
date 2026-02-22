@@ -263,19 +263,65 @@ export function getDashboardHtml() {
 
   <!-- Usage Tab -->
   <div id="tab-usage" class="tab-panel">
+    <!-- Connection Status -->
     <div class="section">
       <div class="section-header open">
-        <h2>Usage Monitor</h2>
+        <h2>Connection Status</h2>
       </div>
       <div class="section-body open">
-        <div id="usageGrid" class="usage-grid"></div>
-        <div id="usageChart" class="usage-chart" style="display:none"></div>
-        <div class="setup-row">
+        <div id="connectionStatus" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px">
+          <span id="connDot" style="width:8px;height:8px;border-radius:50%;background:var(--text3)"></span>
+          <span id="connText" style="color:var(--text2)">Not connected</span>
+        </div>
+        <div class="setup-row" style="margin-top:0">
           <span style="color:var(--text2)">Session Cookie:</span>
           <input type="password" id="sessionKeyInput" placeholder="Paste sessionKey cookie value" />
           <input id="orgIdInput" placeholder="Org ID" style="max-width:200px" />
           <button class="btn btn-sm" onclick="saveApiConfig()">Save</button>
           <button class="btn btn-sm" onclick="refreshUsage()">Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Usage Meters -->
+    <div class="section">
+      <div class="section-header open">
+        <h2>Plan Usage</h2>
+      </div>
+      <div class="section-body open">
+        <div id="usageGrid" class="usage-grid"></div>
+        <div id="usageChart" class="usage-chart" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- Overnight Management -->
+    <div class="section">
+      <div class="section-header open" onclick="toggleSection(this)">
+        <h2><span class="chevron">&#9654;</span> Overnight Management</h2>
+      </div>
+      <div class="section-body open">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="usage-card">
+            <h3>Schedule</h3>
+            <div style="display:flex;gap:16px;margin-top:8px">
+              <div class="time-input"><span>Bed</span><input type="text" id="usageBedTime" value="23:00" maxlength="5" placeholder="HH:MM" onfocus="this.select()" onblur="validateTime(this)"></div>
+              <div class="time-input"><span>Wake</span><input type="text" id="usageWakeTime" value="07:00" maxlength="5" placeholder="HH:MM" onfocus="this.select()" onblur="validateTime(this)"></div>
+              <div class="time-input"><span>Work</span><input type="text" id="usageWorkTime" value="09:00" maxlength="5" placeholder="HH:MM" onfocus="this.select()" onblur="validateTime(this)"></div>
+            </div>
+            <button class="btn btn-sm" style="margin-top:8px" onclick="saveScheduleFromUsage()">Update Schedule</button>
+          </div>
+          <div class="usage-card">
+            <h3>Credit Resets</h3>
+            <div id="resetTimers" style="font-size:13px;color:var(--text2);margin-top:8px">
+              <p>No reset data available</p>
+            </div>
+          </div>
+        </div>
+        <div class="usage-card" style="margin-top:16px">
+          <h3>Overnight Queue</h3>
+          <div id="overnightQueue" style="font-size:13px;color:var(--text2);margin-top:8px">
+            <p>No approved tasks in queue</p>
+          </div>
         </div>
       </div>
     </div>
@@ -662,12 +708,71 @@ function populateProjectDropdowns() {
 async function loadUsage() {
   const data = await api('/api/usage');
   renderUsage(data);
+  renderOvernightQueue();
+}
+
+function updateConnectionStatus(data) {
+  const dot = document.getElementById('connDot');
+  const text = document.getElementById('connText');
+  if (!dot || !text) return;
+
+  if (data?.current) {
+    dot.style.background = 'var(--green)';
+    const ts = data.lastUpdated ? new Date(data.lastUpdated).toLocaleTimeString() : 'just now';
+    text.textContent = 'Connected \\u2014 last updated ' + ts;
+    text.style.color = 'var(--green)';
+  } else {
+    dot.style.background = 'var(--red)';
+    text.textContent = 'Not connected \\u2014 configure session cookie to enable monitoring';
+    text.style.color = 'var(--red)';
+  }
+}
+
+function renderResetTimers(data) {
+  const el = document.getElementById('resetTimers');
+  if (!el || !data?.current) return;
+  const c = data.current;
+  let html = '';
+  if (c.fiveHour?.resetsIn) html += '<p>5-Hour Window: resets in <strong>' + c.fiveHour.resetsIn + '</strong></p>';
+  if (c.sevenDay?.resetsIn) html += '<p>Weekly Limit: resets in <strong>' + c.sevenDay.resetsIn + '</strong></p>';
+  el.innerHTML = html || '<p>No reset data available</p>';
+}
+
+function renderOvernightQueue() {
+  const el = document.getElementById('overnightQueue');
+  if (!el) return;
+  const approvedPending = tasks.filter(t => t.approved && t.status === 'pending')
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  if (approvedPending.length === 0) {
+    el.innerHTML = '<p>No approved tasks in queue</p>';
+    return;
+  }
+  el.innerHTML = '<ol style="margin:0;padding-left:20px">' +
+    approvedPending.map(t => {
+      const proj = t.project ? projects.find(p => p.id === t.project) : null;
+      return '<li style="margin-bottom:4px">' + esc(t.title) +
+        (proj ? ' <span style="color:var(--accent);font-size:11px">[' + esc(proj.name) + ']</span>' : '') +
+        ' <span style="color:var(--text3);font-size:11px">' + esc(t.dir) + '</span></li>';
+    }).join('') + '</ol>';
+}
+
+function saveScheduleFromUsage() {
+  const bed = document.getElementById('usageBedTime').value;
+  const wake = document.getElementById('usageWakeTime').value;
+  const work = document.getElementById('usageWorkTime').value;
+  // Sync to header inputs too
+  document.getElementById('bedTime').value = bed;
+  document.getElementById('wakeTime').value = wake;
+  document.getElementById('workTime').value = work;
+  api('/api/schedule', { method: 'POST', body: { bedTime: bed, wakeTime: wake, workTime: work } });
 }
 
 function renderUsage(data) {
   const grid = document.getElementById('usageGrid');
+  updateConnectionStatus(data);
+  renderResetTimers(data);
   if (!data || !data.current) {
-    grid.innerHTML = '<div class="usage-card"><h3>No usage data</h3><p class="usage-detail">Configure your session cookie below to enable live usage monitoring from claude.ai</p></div>';
+    grid.innerHTML = '<div class="usage-card"><h3>No usage data</h3><p class="usage-detail">Configure your session cookie to enable monitoring</p></div>';
     return;
   }
   const c = data.current;
@@ -779,11 +884,17 @@ async function loadStatus() {
   btn.textContent = status.schedule?.running ? 'Stop' : 'Start';
   btn.className = status.schedule?.running ? 'btn btn-danger' : 'btn btn-primary';
 
-  // Populate schedule inputs
+  // Populate schedule inputs (header + usage tab)
   if (status.schedule) {
     document.getElementById('bedTime').value = status.schedule.bedTime || '23:00';
     document.getElementById('wakeTime').value = status.schedule.wakeTime || '07:00';
     document.getElementById('workTime').value = status.schedule.workTime || '09:00';
+    const ub = document.getElementById('usageBedTime');
+    const uw = document.getElementById('usageWakeTime');
+    const uwk = document.getElementById('usageWorkTime');
+    if (ub) ub.value = status.schedule.bedTime || '23:00';
+    if (uw) uw.value = status.schedule.wakeTime || '07:00';
+    if (uwk) uwk.value = status.schedule.workTime || '09:00';
   }
 }
 
