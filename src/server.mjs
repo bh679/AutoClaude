@@ -4,6 +4,7 @@ import { loadTasks, createTask, updateTask, deleteTask, reorderTasks, loadPermis
 import { getRecentLogs } from './logger.mjs';
 import { log } from './logger.mjs';
 import { getLatestSummary } from './summary.mjs';
+import { scanActiveSessions } from './session-tracker.mjs';
 import { getDashboardHtml } from './dashboard.mjs';
 
 let _daemon = null; // set by index.mjs
@@ -133,9 +134,25 @@ export function startServer() {
         return json(res, { ok: true });
       }
 
+      // ─── Sessions (active Claude Code instances) ───
+      if (url === '/api/sessions' && method === 'GET') {
+        return json(res, scanActiveSessions());
+      }
+
       // ─── Usage ───
       if (url === '/api/usage' && method === 'GET') {
         return json(res, _daemon?.getUsageData() || {});
+      }
+
+      // ─── Auth: extract cookies from browser login ───
+      if (url === '/api/auth/callback' && method === 'POST') {
+        const body = await parseBody(req);
+        if (body.sessionKey && body.orgId) {
+          saveConfig({ claudeApi: { sessionKey: body.sessionKey, orgId: body.orgId } });
+          log('info', 'Session cookie saved via browser login');
+          return json(res, { ok: true });
+        }
+        return json(res, { error: 'Missing sessionKey or orgId' }, 400);
       }
 
       // ─── Config (session key, org ID) ───
