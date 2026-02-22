@@ -1,0 +1,32 @@
+{
+  "schedule": {
+    "bedTime": "23:00",
+    "wakeTime": "07:00",
+    "workTime": "09:00"
+  },
+  "creditCheck": {
+    "pollIntervalMs": 300000,
+    "utilizationThreshold": 80,
+    "pingPrompt": "Respond with just the word PONG",
+    "maxBudgetUsd": 0.01,
+    "timeoutMs": 30000
+  },
+  "claude": {
+    "binary": "/usr/local/bin/claude",
+    "taskTimeoutMs": 1800000,
+    "maxBudgetPerTaskUsd": 5.00
+  },
+  "server": {
+    "port": 3457,
+    "host": "localhost"
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": "default"
+  },
+  "claudeApi": {
+    "baseUrl": "https://claude.ai",
+    "orgId": "",
+    "sessionKey": ""
+  }
+}

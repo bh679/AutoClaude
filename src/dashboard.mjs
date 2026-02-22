@@ -1,0 +1,701 @@
+export function getDashboardHtml() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoClaude Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --bg4: #30363d;
+    --text: #e6edf3; --text2: #8b949e; --text3: #484f58;
+    --accent: #58a6ff; --green: #3fb950; --red: #f85149;
+    --orange: #d29922; --purple: #bc8cff;
+    --border: #30363d; --radius: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+
+  /* Header */
+  .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 500; }
+  .status-badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status-SLEEP { background: #1a3a2a; color: var(--green); }
+  .status-SLEEP .dot { background: var(--green); }
+  .status-WAKE { background: #3a2a1a; color: var(--orange); }
+  .status-WAKE .dot { background: var(--orange); }
+  .status-WORK { background: #1a2a3a; color: var(--accent); }
+  .status-WORK .dot { background: var(--accent); }
+  .header-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .time-input { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text2); }
+  .time-input input[type="text"] { width: 58px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 4px 6px; border-radius: 4px; font-size: 13px; text-align: center; font-family: 'SF Mono', Monaco, monospace; letter-spacing: 1px; }
+  .btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg3); color: var(--text); cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+  .btn:hover { background: var(--bg4); }
+  .btn-primary { background: var(--green); border-color: var(--green); color: #000; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
+  .btn-danger:hover { opacity: 0.9; }
+  .btn-sm { padding: 3px 10px; font-size: 12px; }
+
+  /* Container */
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+  /* Section */
+  .section { margin-bottom: 24px; }
+  .section-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; cursor: pointer; user-select: none; }
+  .section-header h2 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .section-header .chevron { transition: transform 0.2s; font-size: 12px; color: var(--text2); }
+  .section-header.open .chevron { transform: rotate(90deg); }
+  .section-body { display: none; }
+  .section-body.open { display: block; }
+
+  /* Task Cards */
+  .task-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 8px; display: flex; gap: 12px; align-items: flex-start; transition: border-color 0.15s, box-shadow 0.15s; }
+  .task-card.dragging { opacity: 0.5; border-color: var(--accent); }
+  .task-card.drag-over { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .task-card.running { border-left: 3px solid var(--orange); }
+  .task-card.completed { border-left: 3px solid var(--green); opacity: 0.7; }
+  .task-card.failed { border-left: 3px solid var(--red); opacity: 0.7; }
+  .drag-handle { cursor: grab; color: var(--text3); padding: 4px; font-size: 16px; line-height: 1; user-select: none; }
+  .drag-handle:active { cursor: grabbing; }
+  .task-content { flex: 1; min-width: 0; }
+  .task-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .task-title { font-weight: 600; font-size: 14px; }
+  .task-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text2); margin-bottom: 6px; flex-wrap: wrap; }
+  .task-prompt { font-size: 13px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
+  .task-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .task-controls select { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 3px 8px; border-radius: 4px; font-size: 12px; }
+  .approve-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 4px; border: 1px solid; font-size: 12px; cursor: pointer; font-weight: 500; transition: all 0.15s; }
+  .approve-btn.approved { background: #1a3a2a; border-color: var(--green); color: var(--green); }
+  .approve-btn.unapproved { background: var(--bg3); border-color: var(--border); color: var(--text2); }
+
+  /* Slider */
+  .slider-group { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .slider-group input[type=range] { width: 100px; accent-color: var(--accent); }
+  .slider-label { color: var(--text2); min-width: 60px; }
+
+  /* Stats badge */
+  .stats-row { display: flex; gap: 12px; font-size: 11px; color: var(--text3); margin-top: 6px; flex-wrap: wrap; }
+  .stats-row span { display: inline-flex; align-items: center; gap: 3px; }
+
+  /* Add Task Form */
+  .add-form { background: var(--bg2); border: 1px dashed var(--border); border-radius: var(--radius); padding: 16px; margin-top: 8px; display: none; }
+  .add-form.open { display: block; }
+  .add-form input, .add-form textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 4px; font-size: 13px; font-family: inherit; margin-bottom: 8px; }
+  .add-form textarea { min-height: 80px; resize: vertical; }
+  .form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .form-row label { font-size: 12px; color: var(--text2); min-width: 80px; }
+
+  /* Permission Profiles */
+  .profile-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+  .profile-tab { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg3); color: var(--text2); cursor: pointer; font-size: 13px; transition: all 0.15s; }
+  .profile-tab.active { background: var(--accent); border-color: var(--accent); color: #000; }
+  .profile-editor { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .profile-editor .form-row input, .profile-editor .form-row select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 4px; font-size: 13px; flex: 1; }
+  .profile-editor .form-row input[type=checkbox] { width: auto; flex: none; }
+
+  /* Usage Monitor */
+  .usage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .usage-grid { grid-template-columns: 1fr; } }
+  .usage-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .usage-card h3 { font-size: 13px; font-weight: 500; color: var(--text2); margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .usage-bar { height: 6px; background: var(--bg4); border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+  .usage-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+  .usage-bar-fill.green { background: var(--green); }
+  .usage-bar-fill.orange { background: var(--orange); }
+  .usage-bar-fill.red { background: var(--red); }
+  .usage-bar-fill.blue { background: var(--accent); }
+  .usage-bar-fill.purple { background: var(--purple); }
+  .usage-percent { font-size: 20px; font-weight: 600; }
+  .usage-detail { font-size: 12px; color: var(--text2); }
+  .usage-chart { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 16px; }
+  .usage-chart svg { width: 100%; height: 120px; }
+
+  /* Setup form */
+  .setup-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; }
+  .setup-row input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 12px; flex: 1; max-width: 300px; }
+
+  /* Log */
+  .log-output { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-family: 'SF Mono', Monaco, monospace; font-size: 11px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; color: var(--text2); line-height: 1.6; }
+
+  /* Summary */
+  .summary-content { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; font-size: 13px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; }
+
+  /* Delete btn on card */
+  .task-delete { color: var(--text3); cursor: pointer; padding: 4px; font-size: 14px; transition: color 0.15s; }
+  .task-delete:hover { color: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>AutoClaude</h1>
+    <span id="statusBadge" class="status-badge status-WORK"><span class="dot"></span><span id="statusText">WORK</span></span>
+    <span id="creditStatus" style="font-size:12px;color:var(--text2)"></span>
+  </div>
+  <div class="header-controls">
+    <div class="time-input"><span>Bed</span><input type="text" id="bedTime" value="23:00" maxlength="5" placeholder="HH:MM" onfocus="this.select()" onblur="validateTime(this)"></div>
+    <div class="time-input"><span>Wake</span><input type="text" id="wakeTime" value="07:00" maxlength="5" placeholder="HH:MM" onfocus="this.select()" onblur="validateTime(this)"></div>
+    <div class="time-input"><span>Work</span><input type="text" id="workTime" value="09:00" maxlength="5" placeholder="HH:MM" onfocus="this.select()" onblur="validateTime(this)"></div>
+    <button id="startStopBtn" class="btn btn-primary" onclick="toggleDaemon()">Start</button>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Task Queue -->
+  <div class="section">
+    <div class="section-header open" onclick="toggleSection(this)">
+      <h2><span class="chevron">&#9654;</span> Task Queue <span id="taskCount" style="color:var(--text2);font-weight:400"></span></h2>
+      <button class="btn btn-sm" onclick="event.stopPropagation();toggleAddForm()">+ Add Task</button>
+    </div>
+    <div class="section-body open">
+      <div id="taskList"></div>
+      <div id="addForm" class="add-form">
+        <input id="newTitle" placeholder="Task title" />
+        <textarea id="newPrompt" placeholder="Detailed prompt / instructions for Claude..."></textarea>
+        <div class="form-row">
+          <label>Directory</label>
+          <input id="newDir" placeholder="/path/to/project" />
+        </div>
+        <div class="form-row">
+          <label>Profile</label>
+          <select id="newProfile"></select>
+        </div>
+        <div class="form-row">
+          <label>Sub-agents</label>
+          <div class="slider-group">
+            <input type="range" id="newSubagent" min="0" max="1" step="0.05" value="0.5" oninput="document.getElementById('newSubagentLabel').textContent=subagentLabel(this.value)">
+            <span id="newSubagentLabel" class="slider-label">Moderate</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn" onclick="toggleAddForm()">Cancel</button>
+          <button class="btn btn-primary" onclick="addTask()">Add Task</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Permission Profiles -->
+  <div class="section">
+    <div class="section-header" onclick="toggleSection(this)">
+      <h2><span class="chevron">&#9654;</span> Permission Profiles</h2>
+    </div>
+    <div class="section-body">
+      <div id="profileTabs" class="profile-tabs"></div>
+      <div id="profileEditor" class="profile-editor" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Usage Monitor -->
+  <div class="section">
+    <div class="section-header" onclick="toggleSection(this)">
+      <h2><span class="chevron">&#9654;</span> Usage Monitor</h2>
+    </div>
+    <div class="section-body">
+      <div id="usageGrid" class="usage-grid"></div>
+      <div id="usageChart" class="usage-chart" style="display:none"></div>
+      <div class="setup-row">
+        <span style="color:var(--text2)">Session Cookie:</span>
+        <input type="password" id="sessionKeyInput" placeholder="Paste sessionKey cookie value" />
+        <input id="orgIdInput" placeholder="Org ID" style="max-width:200px" />
+        <button class="btn btn-sm" onclick="saveApiConfig()">Save</button>
+        <button class="btn btn-sm" onclick="refreshUsage()">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity Log -->
+  <div class="section">
+    <div class="section-header" onclick="toggleSection(this)">
+      <h2><span class="chevron">&#9654;</span> Activity Log</h2>
+    </div>
+    <div class="section-body">
+      <div id="logOutput" class="log-output">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Overnight Summary -->
+  <div class="section">
+    <div class="section-header" onclick="toggleSection(this)">
+      <h2><span class="chevron">&#9654;</span> Overnight Summary</h2>
+    </div>
+    <div class="section-body">
+      <div id="summaryContent" class="summary-content">No summary available yet.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let tasks = [];
+let profiles = {};
+let activeProfileKey = null;
+let dragSrcId = null;
+
+// ─── Time Input ───
+function validateTime(input) {
+  let val = input.value.replace(/[^0-9:]/g, '');
+  // Auto-format: "7" → "07:00", "23" → "23:00", "730" → "07:30"
+  if (/^\\d{1,2}$/.test(val)) {
+    val = val.padStart(2, '0') + ':00';
+  } else if (/^\\d{3}$/.test(val)) {
+    val = '0' + val[0] + ':' + val.slice(1);
+  } else if (/^\\d{4}$/.test(val)) {
+    val = val.slice(0, 2) + ':' + val.slice(2);
+  }
+  const match = val.match(/^(\\d{1,2}):(\\d{2})$/);
+  if (match) {
+    let h = parseInt(match[1]), m = parseInt(match[2]);
+    h = Math.min(23, Math.max(0, h));
+    m = Math.min(59, Math.max(0, m));
+    input.value = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    input.style.borderColor = '';
+  } else {
+    input.style.borderColor = 'var(--red)';
+  }
+}
+
+// ─── Helpers ───
+function subagentLabel(v) {
+  v = parseFloat(v);
+  if (v <= 0.05) return 'None';
+  if (v <= 0.3) return 'Minimal';
+  if (v <= 0.6) return 'Moderate';
+  if (v <= 0.85) return 'Heavy';
+  return 'Maximum';
+}
+
+function usageColor(pct) {
+  if (pct >= 90) return 'red';
+  if (pct >= 60) return 'orange';
+  return 'green';
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  return res.json();
+}
+
+// ─── Sections ───
+function toggleSection(el) {
+  el.classList.toggle('open');
+  const body = el.nextElementSibling;
+  body.classList.toggle('open');
+}
+
+// ─── Tasks ───
+async function loadTaskList() {
+  tasks = await api('/api/tasks');
+  tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+  renderTasks();
+}
+
+function renderTasks() {
+  const list = document.getElementById('taskList');
+  const count = document.getElementById('taskCount');
+  const pending = tasks.filter(t => t.status === 'pending').length;
+  const approved = tasks.filter(t => t.approved && t.status === 'pending').length;
+  count.textContent = '(' + approved + ' approved / ' + tasks.length + ' total)';
+
+  list.innerHTML = tasks.map(t => {
+    const statusClass = t.status === 'running' ? 'running' : t.status === 'completed' ? 'completed' : t.status === 'failed' ? 'failed' : '';
+    const approveClass = t.approved ? 'approved' : 'unapproved';
+    const approveText = t.approved ? '\\u2713 Approved' : '\\u2717 Unapproved';
+
+    let statsHtml = '';
+    if (t.stats) {
+      statsHtml = '<div class="stats-row">' +
+        '<span>Claude: ' + (t.stats.claudeDirectWork || 0) + ' tool uses</span>' +
+        '<span>Sub-agents: ' + (t.stats.subagentCount || 0) + ' (' + Math.round((t.stats.subagentRatio || 0) * 100) + '%)</span>' +
+        (t.stats.models?.length ? '<span>Models: ' + t.stats.models.join(', ') + '</span>' : '') +
+        '</div>';
+      if (t.stats.subagentCalls?.length) {
+        statsHtml += '<div class="stats-row" style="flex-direction:column;gap:2px;margin-top:4px">' +
+          t.stats.subagentCalls.map(s => '<span style="color:var(--purple)">[' + s.subagentType + '] ' + s.description + ' (' + s.model + ')</span>').join('') +
+          '</div>';
+      }
+    }
+
+    return '<div class="task-card ' + statusClass + '" draggable="true" data-id="' + t.id + '" ' +
+      'ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)" ondragleave="onDragLeave(event)">' +
+      '<div class="drag-handle">\\u2630</div>' +
+      '<div class="task-content">' +
+        '<div class="task-top">' +
+          '<span class="task-title">' + esc(t.title) + '</span>' +
+          '<div style="display:flex;gap:6px;align-items:center">' +
+            '<span class="approve-btn ' + approveClass + '" onclick="toggleApprove(\\'' + t.id + '\\')">' + approveText + '</span>' +
+            '<span class="task-delete" onclick="removeTask(\\'' + t.id + '\\')" title="Delete">&times;</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="task-meta">' +
+          '<span>' + esc(t.dir) + '</span>' +
+          (t.status !== 'pending' ? '<span style="text-transform:uppercase;color:' + (t.status === 'completed' ? 'var(--green)' : t.status === 'failed' ? 'var(--red)' : 'var(--orange)') + '">' + t.status + '</span>' : '') +
+        '</div>' +
+        '<div class="task-prompt">' + esc(t.prompt || '') + '</div>' +
+        '<div class="task-controls">' +
+          '<select onchange="updateTaskField(\\'' + t.id + '\\', \\'permissionProfile\\', this.value)">' +
+            Object.keys(profiles).map(k => '<option value="' + k + '"' + (k === t.permissionProfile ? ' selected' : '') + '>' + esc(profiles[k]?.name || k) + '</option>').join('') +
+          '</select>' +
+          '<div class="slider-group">' +
+            '<span style="color:var(--text2)">Sub-agents:</span>' +
+            '<input type="range" min="0" max="1" step="0.05" value="' + (t.subagentLevel ?? 0.5) + '" ' +
+              'oninput="this.nextElementSibling.textContent=subagentLabel(this.value)" ' +
+              'onchange="updateTaskField(\\'' + t.id + '\\', \\'subagentLevel\\', parseFloat(this.value))">' +
+            '<span class="slider-label">' + subagentLabel(t.subagentLevel ?? 0.5) + '</span>' +
+          '</div>' +
+        '</div>' +
+        statsHtml +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function toggleApprove(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  await api('/api/tasks/' + id, { method: 'PUT', body: { approved: !t.approved } });
+  loadTaskList();
+}
+
+async function updateTaskField(id, field, value) {
+  await api('/api/tasks/' + id, { method: 'PUT', body: { [field]: value } });
+  loadTaskList();
+}
+
+async function removeTask(id) {
+  if (!confirm('Delete this task?')) return;
+  await api('/api/tasks/' + id, { method: 'DELETE' });
+  loadTaskList();
+}
+
+function toggleAddForm() {
+  document.getElementById('addForm').classList.toggle('open');
+}
+
+async function addTask() {
+  const title = document.getElementById('newTitle').value.trim();
+  const prompt = document.getElementById('newPrompt').value.trim();
+  const dir = document.getElementById('newDir').value.trim();
+  const profile = document.getElementById('newProfile').value;
+  const subagentLevel = parseFloat(document.getElementById('newSubagent').value);
+  if (!title) return alert('Title required');
+  if (!prompt) return alert('Prompt required');
+  await api('/api/tasks', { method: 'POST', body: { title, prompt, dir, permissionProfile: profile, subagentLevel } });
+  document.getElementById('newTitle').value = '';
+  document.getElementById('newPrompt').value = '';
+  document.getElementById('newDir').value = '';
+  toggleAddForm();
+  loadTaskList();
+}
+
+// ─── Drag & Drop ───
+function onDragStart(e) {
+  dragSrcId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+function onDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.task-card').forEach(c => c.classList.remove('drag-over'));
+}
+async function onDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const targetId = e.currentTarget.dataset.id;
+  if (dragSrcId === targetId) return;
+  const ids = tasks.map(t => t.id);
+  const srcIdx = ids.indexOf(dragSrcId);
+  const tgtIdx = ids.indexOf(targetId);
+  ids.splice(srcIdx, 1);
+  ids.splice(tgtIdx, 0, dragSrcId);
+  await api('/api/tasks/reorder', { method: 'PUT', body: { orderedIds: ids } });
+  loadTaskList();
+}
+
+// ─── Profiles ───
+async function loadProfiles() {
+  const data = await api('/api/permissions');
+  profiles = data.profiles || {};
+  renderProfileTabs();
+  populateProfileDropdowns();
+}
+
+function renderProfileTabs() {
+  const tabs = document.getElementById('profileTabs');
+  const keys = Object.keys(profiles);
+  tabs.innerHTML = keys.map(k =>
+    '<div class="profile-tab' + (k === activeProfileKey ? ' active' : '') + '" onclick="selectProfile(\\'' + k + '\\')">' + esc(profiles[k].name || k) + '</div>'
+  ).join('') + '<div class="profile-tab" onclick="createNewProfile()" style="border-style:dashed">+ New</div>';
+}
+
+function selectProfile(key) {
+  activeProfileKey = key;
+  renderProfileTabs();
+  renderProfileEditor();
+}
+
+function renderProfileEditor() {
+  const editor = document.getElementById('profileEditor');
+  if (!activeProfileKey || !profiles[activeProfileKey]) { editor.style.display = 'none'; return; }
+  editor.style.display = 'block';
+  const p = profiles[activeProfileKey];
+  const modes = ['default','acceptEdits','bypassPermissions','dontAsk','plan'];
+  editor.innerHTML =
+    '<div class="form-row"><label>Key</label><input value="' + esc(activeProfileKey) + '" disabled /></div>' +
+    '<div class="form-row"><label>Name</label><input id="pName" value="' + esc(p.name || '') + '" /></div>' +
+    '<div class="form-row"><label>Description</label><input id="pDesc" value="' + esc(p.description || '') + '" /></div>' +
+    '<div class="form-row"><label>Mode</label><select id="pMode">' + modes.map(m => '<option' + (m === p.permissionMode ? ' selected' : '') + '>' + m + '</option>').join('') + '</select></div>' +
+    '<div class="form-row"><label>Skip Perms</label><input type="checkbox" id="pSkip"' + (p.dangerouslySkipPermissions ? ' checked' : '') + ' /></div>' +
+    '<div class="form-row"><label>Allowed</label><input id="pAllow" value="' + esc((p.allowedTools || []).join(', ')) + '" placeholder="Read, Edit, Write..." /></div>' +
+    '<div class="form-row"><label>Disallowed</label><input id="pDisallow" value="' + esc((p.disallowedTools || []).join(', ')) + '" placeholder="Bash, ..." /></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+      '<button class="btn btn-danger btn-sm" onclick="deleteProfile()">Delete</button>' +
+      '<button class="btn btn-primary btn-sm" onclick="saveProfile()">Save</button>' +
+    '</div>';
+}
+
+async function saveProfile() {
+  const profile = {
+    name: document.getElementById('pName').value,
+    description: document.getElementById('pDesc').value,
+    permissionMode: document.getElementById('pMode').value,
+    dangerouslySkipPermissions: document.getElementById('pSkip').checked,
+    allowedTools: document.getElementById('pAllow').value.split(',').map(s => s.trim()).filter(Boolean),
+    disallowedTools: document.getElementById('pDisallow').value.split(',').map(s => s.trim()).filter(Boolean),
+  };
+  await api('/api/permissions/' + activeProfileKey, { method: 'PUT', body: profile });
+  loadProfiles();
+}
+
+async function deleteProfile() {
+  if (!confirm('Delete profile "' + activeProfileKey + '"?')) return;
+  await api('/api/permissions/' + activeProfileKey, { method: 'DELETE' });
+  activeProfileKey = null;
+  document.getElementById('profileEditor').style.display = 'none';
+  loadProfiles();
+}
+
+async function createNewProfile() {
+  const key = prompt('Profile key (lowercase, no spaces):');
+  if (!key) return;
+  await api('/api/permissions', { method: 'POST', body: { key, profile: { name: key, description: '', permissionMode: 'default', dangerouslySkipPermissions: false, allowedTools: [], disallowedTools: [] } } });
+  activeProfileKey = key;
+  loadProfiles();
+}
+
+function populateProfileDropdowns() {
+  const selects = [document.getElementById('newProfile')];
+  for (const sel of selects) {
+    if (!sel) continue;
+    sel.innerHTML = Object.keys(profiles).map(k => '<option value="' + k + '">' + esc(profiles[k].name || k) + '</option>').join('');
+  }
+}
+
+// ─── Usage Monitor ───
+async function loadUsage() {
+  const data = await api('/api/usage');
+  renderUsage(data);
+}
+
+function renderUsage(data) {
+  const grid = document.getElementById('usageGrid');
+  if (!data || !data.current) {
+    grid.innerHTML = '<div class="usage-card"><h3>No usage data</h3><p class="usage-detail">Configure your session cookie below to enable live usage monitoring from claude.ai</p></div>';
+    return;
+  }
+  const c = data.current;
+  let html = '';
+
+  // 5-hour window
+  if (c.fiveHour) {
+    html += usageCardHtml('5-Hour Window', c.fiveHour.utilization, c.fiveHour.resetsIn ? 'Resets in ' + c.fiveHour.resetsIn : '');
+  }
+
+  // 7-day all models
+  if (c.sevenDay) {
+    html += usageCardHtml('Weekly (All Models)', c.sevenDay.utilization, c.sevenDay.resetsIn ? 'Resets in ' + c.sevenDay.resetsIn : '');
+  }
+
+  // Sonnet
+  if (c.sonnet && c.sonnet.utilization !== undefined) {
+    html += usageCardHtml('Weekly (Sonnet)', c.sonnet.utilization, '');
+  }
+
+  // Extra usage
+  if (c.extraUsage) {
+    const cur = c.extraUsage.currency || 'AUD';
+    const used = (c.extraUsage.used / 100).toFixed(2);
+    const limit = (c.extraUsage.limit / 100).toFixed(2);
+    html += '<div class="usage-card">' +
+      '<h3>Extra Usage</h3>' +
+      '<div class="usage-bar"><div class="usage-bar-fill purple" style="width:' + c.extraUsage.percentage + '%"></div></div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
+        '<span class="usage-percent">' + c.extraUsage.percentage + '%</span>' +
+        '<span class="usage-detail">' + cur + ' $' + used + ' / $' + limit + '</span>' +
+      '</div>' +
+      (c.prepaid ? '<div class="usage-detail" style="margin-top:4px">Balance: ' + cur + ' $' + (c.prepaid.amount / 100).toFixed(2) + '</div>' : '') +
+    '</div>';
+  }
+
+  grid.innerHTML = html;
+
+  // Chart
+  if (data.graph?.polls?.length > 1) {
+    renderUsageChart(data.graph);
+  }
+}
+
+function usageCardHtml(title, pct, subtitle) {
+  const col = usageColor(pct);
+  return '<div class="usage-card">' +
+    '<h3>' + title + '<span class="usage-detail">' + esc(subtitle) + '</span></h3>' +
+    '<div class="usage-bar"><div class="usage-bar-fill ' + col + '" style="width:' + pct + '%"></div></div>' +
+    '<span class="usage-percent">' + pct + '%</span>' +
+  '</div>';
+}
+
+function renderUsageChart(graph) {
+  const chart = document.getElementById('usageChart');
+  chart.style.display = 'block';
+  const polls = graph.polls;
+  const events = graph.taskEvents || [];
+  if (polls.length < 2) return;
+
+  const w = 600, h = 100, pad = 30;
+  const minT = new Date(polls[0].ts).getTime();
+  const maxT = new Date(polls[polls.length - 1].ts).getTime();
+  const range = maxT - minT || 1;
+
+  const scaleX = (ts) => pad + ((new Date(ts).getTime() - minT) / range) * (w - pad * 2);
+  const scaleY = (v) => h - pad + (pad - (h - pad)) * (v / 100);
+
+  let pathD = polls.map((p, i) => (i === 0 ? 'M' : 'L') + scaleX(p.ts).toFixed(1) + ',' + scaleY(p.fiveHr ?? 0).toFixed(1)).join(' ');
+
+  let markers = events.map(e => {
+    const x = scaleX(e.ts);
+    const color = e.event === 'task_start' ? 'var(--orange)' : 'var(--green)';
+    const r = e.event === 'task_start' ? 4 : 3;
+    return '<circle cx="' + x.toFixed(1) + '" cy="' + (h / 2) + '" r="' + r + '" fill="' + color + '" />' +
+           '<text x="' + x.toFixed(1) + '" y="' + (h / 2 + 14) + '" fill="var(--text3)" font-size="8" text-anchor="middle">' + esc(e.task || '').slice(0, 15) + '</text>';
+  }).join('');
+
+  chart.innerHTML = '<svg viewBox="0 0 ' + w + ' ' + (h + 10) + '" xmlns="http://www.w3.org/2000/svg">' +
+    '<line x1="' + pad + '" y1="' + (h - pad) + '" x2="' + (w - pad) + '" y2="' + (h - pad) + '" stroke="var(--border)" />' +
+    '<line x1="' + pad + '" y1="' + pad + '" x2="' + pad + '" y2="' + (h - pad) + '" stroke="var(--border)" />' +
+    '<text x="' + pad + '" y="' + (pad - 5) + '" fill="var(--text3)" font-size="9">100%</text>' +
+    '<text x="' + pad + '" y="' + (h - pad + 12) + '" fill="var(--text3)" font-size="9">0%</text>' +
+    '<path d="' + pathD + '" fill="none" stroke="var(--accent)" stroke-width="2" />' +
+    markers +
+  '</svg>';
+}
+
+// ─── Status ───
+async function loadStatus() {
+  const status = await api('/api/status');
+  const badge = document.getElementById('statusBadge');
+  const text = document.getElementById('statusText');
+  const credit = document.getElementById('creditStatus');
+  const btn = document.getElementById('startStopBtn');
+
+  const mode = status.schedule?.currentMode || 'WORK';
+  badge.className = 'status-badge status-' + mode;
+  text.textContent = mode;
+
+  if (status.runner?.isRunning) {
+    credit.textContent = 'Running: ' + (status.runner.currentTask || '');
+  } else if (status.creditsAvailable) {
+    credit.textContent = 'Credits available';
+  } else {
+    credit.textContent = status.schedule?.running ? 'Waiting for credits...' : '';
+  }
+
+  btn.textContent = status.schedule?.running ? 'Stop' : 'Start';
+  btn.className = status.schedule?.running ? 'btn btn-danger' : 'btn btn-primary';
+
+  // Populate schedule inputs
+  if (status.schedule) {
+    document.getElementById('bedTime').value = status.schedule.bedTime || '23:00';
+    document.getElementById('wakeTime').value = status.schedule.wakeTime || '07:00';
+    document.getElementById('workTime').value = status.schedule.workTime || '09:00';
+  }
+}
+
+// ─── Config ───
+async function loadApiConfig() {
+  const data = await api('/api/config');
+  if (data.claudeApi?.orgId) document.getElementById('orgIdInput').value = data.claudeApi.orgId;
+  if (data.claudeApi?.sessionKeySet) document.getElementById('sessionKeyInput').placeholder = 'Cookie saved (hidden)';
+}
+
+async function saveApiConfig() {
+  const sessionKey = document.getElementById('sessionKeyInput').value.trim();
+  const orgId = document.getElementById('orgIdInput').value.trim();
+  const body = { claudeApi: {} };
+  if (sessionKey) body.claudeApi.sessionKey = sessionKey;
+  if (orgId) body.claudeApi.orgId = orgId;
+  await api('/api/config', { method: 'POST', body });
+  document.getElementById('sessionKeyInput').value = '';
+  document.getElementById('sessionKeyInput').placeholder = 'Cookie saved (hidden)';
+  refreshUsage();
+}
+
+async function refreshUsage() { loadUsage(); }
+
+// ─── Daemon control ───
+async function toggleDaemon() {
+  const status = await api('/api/status');
+  if (status.schedule?.running) {
+    await api('/api/daemon/stop', { method: 'POST' });
+  } else {
+    await api('/api/schedule', { method: 'POST', body: {
+      bedTime: document.getElementById('bedTime').value,
+      wakeTime: document.getElementById('wakeTime').value,
+      workTime: document.getElementById('workTime').value,
+    }});
+    await api('/api/daemon/start', { method: 'POST' });
+  }
+  setTimeout(loadStatus, 500);
+}
+
+// ─── Log ───
+async function loadLog() {
+  const lines = await api('/api/log?lines=80');
+  document.getElementById('logOutput').textContent = Array.isArray(lines) ? lines.join('\\n') : 'No logs yet';
+}
+
+// ─── Summary ───
+async function loadSummary() {
+  const data = await api('/api/summary');
+  document.getElementById('summaryContent').textContent = data.content || 'No summary available yet.';
+}
+
+// ─── Init & Polling ───
+async function init() {
+  await Promise.all([loadStatus(), loadTaskList(), loadProfiles(), loadApiConfig(), loadUsage(), loadLog(), loadSummary()]);
+  // Poll every 5 seconds
+  setInterval(() => { loadStatus(); loadTaskList(); }, 5000);
+  setInterval(loadLog, 10000);
+  setInterval(loadUsage, 60000);
+}
+
+init();
+</script>
+</body>
+</html>`;
+}

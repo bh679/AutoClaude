@@ -1,0 +1,16 @@
+{
+  "name": "autoclaude",
+  "version": "1.0.0",
+  "description": "Overnight Claude Code task runner with credit monitoring and web dashboard",
+  "type": "module",
+  "bin": {
+    "autoclaude": "./bin/autoclaude.mjs"
+  },
+  "scripts": {
+    "start": "node bin/autoclaude.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}
