@@ -95,6 +95,20 @@ export function getDashboardHtml() {
   .profile-editor { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
   .profile-editor .form-row input, .profile-editor .form-row select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 4px; font-size: 13px; flex: 1; }
   .profile-editor .form-row input[type=checkbox] { width: auto; flex: none; }
+  .profile-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s; }
+  .profile-card:hover { border-color: var(--accent); }
+  .profile-card.selected { border-color: var(--accent); border-width: 2px; }
+  .profile-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .profile-card-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .profile-card-name .default-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(88,166,255,0.15); color: var(--accent); font-weight: 500; }
+  .profile-card-desc { font-size: 12px; color: var(--text2); margin-top: 4px; }
+  .profile-card-meta { display: flex; gap: 12px; font-size: 11px; color: var(--text3); margin-top: 6px; }
+  .tool-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .tool-tag { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; transition: all 0.15s; user-select: none; }
+  .tool-tag.allowed { background: rgba(63,185,80,0.12); color: var(--green); border: 1px solid rgba(63,185,80,0.2); }
+  .tool-tag.disallowed { background: rgba(248,81,73,0.12); color: var(--red); border: 1px solid rgba(248,81,73,0.2); }
+  .tool-tag.available { background: var(--bg3); color: var(--text3); border: 1px solid var(--border); }
+  .tool-tag:hover { opacity: 0.8; }
 
   /* Usage Monitor */
   .usage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -411,9 +425,15 @@ export function getDashboardHtml() {
     <div class="section">
       <div class="section-header open">
         <h2>Permission Profiles</h2>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" onclick="createNewProfile()">+ New Profile</button>
+          <button class="btn btn-sm" onclick="exportProfiles()">Export</button>
+          <button class="btn btn-sm" onclick="document.getElementById('importInput').click()">Import</button>
+          <input type="file" id="importInput" accept=".json" style="display:none" onchange="importProfiles(this)" />
+        </div>
       </div>
       <div class="section-body open">
-        <div id="profileTabs" class="profile-tabs"></div>
+        <div id="profileCards"></div>
         <div id="profileEditor" class="profile-editor" style="display:none"></div>
       </div>
     </div>
@@ -697,21 +717,50 @@ async function onDrop(e) {
 async function loadProfiles() {
   const data = await api('/api/permissions');
   profiles = data.profiles || {};
-  renderProfileTabs();
+  renderProfileCards();
   populateProfileDropdowns();
 }
 
-function renderProfileTabs() {
-  const tabs = document.getElementById('profileTabs');
+const KNOWN_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash', 'WebFetch', 'WebSearch', 'Task', 'NotebookEdit'];
+
+function renderProfileCards() {
+  const container = document.getElementById('profileCards');
+  if (!container) return;
   const keys = Object.keys(profiles);
-  tabs.innerHTML = keys.map(k =>
-    '<div class="profile-tab' + (k === activeProfileKey ? ' active' : '') + '" onclick="selectProfile(\\'' + k + '\\')">' + esc(profiles[k].name || k) + '</div>'
-  ).join('') + '<div class="profile-tab" onclick="createNewProfile()" style="border-style:dashed">+ New</div>';
+  const config = window._cachedConfig || {};
+  const defaultProfile = config.defaultPermissionProfile || 'full-auto';
+
+  container.innerHTML = keys.map(k => {
+    const p = profiles[k];
+    const usageCount = tasks.filter(t => t.permissionProfile === k).length;
+    const isDefault = k === defaultProfile;
+    const isSelected = k === activeProfileKey;
+
+    return '<div class="profile-card' + (isSelected ? ' selected' : '') + '" onclick="selectProfile(\\'' + k + '\\')">' +
+      '<div class="profile-card-header">' +
+        '<div class="profile-card-name">' + esc(p.name || k) +
+          (isDefault ? ' <span class="default-badge">Default</span>' : '') +
+        '</div>' +
+        '<div style="display:flex;gap:6px;align-items:center">' +
+          '<span style="font-size:11px;color:var(--text3)">' + usageCount + ' task' + (usageCount !== 1 ? 's' : '') + '</span>' +
+          '<button class="btn btn-sm" onclick="event.stopPropagation();duplicateProfile(\\'' + k + '\\')" title="Duplicate">\\ud83d\\udccb</button>' +
+          (!isDefault ? '<button class="btn btn-sm" onclick="event.stopPropagation();setDefaultProfile(\\'' + k + '\\')" title="Set as default">\\u2b50</button>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="profile-card-desc">' + esc(p.description || '') + '</div>' +
+      '<div class="profile-card-meta">' +
+        '<span>Mode: ' + esc(p.permissionMode || 'default') + '</span>' +
+        (p.dangerouslySkipPermissions ? '<span style="color:var(--orange)">Skip permissions</span>' : '') +
+        (p.allowedTools?.length ? '<span style="color:var(--green)">' + p.allowedTools.length + ' allowed</span>' : '') +
+        (p.disallowedTools?.length ? '<span style="color:var(--red)">' + p.disallowedTools.length + ' blocked</span>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
 }
 
 function selectProfile(key) {
   activeProfileKey = key;
-  renderProfileTabs();
+  renderProfileCards();
   renderProfileEditor();
 }
 
@@ -721,18 +770,54 @@ function renderProfileEditor() {
   editor.style.display = 'block';
   const p = profiles[activeProfileKey];
   const modes = ['default','acceptEdits','bypassPermissions','dontAsk','plan'];
+
+  // Build tool tags
+  const allowed = new Set(p.allowedTools || []);
+  const disallowed = new Set(p.disallowedTools || []);
+  const allTools = [...new Set([...KNOWN_TOOLS, ...allowed, ...disallowed])];
+
+  const toolTagsHtml = '<div style="margin-top:4px"><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Tools <span style="color:var(--text3)">(click to toggle: green=allowed, red=blocked, gray=unset)</span></label>' +
+    '<div class="tool-tags">' +
+    allTools.map(t => {
+      const cls = allowed.has(t) ? 'allowed' : disallowed.has(t) ? 'disallowed' : 'available';
+      return '<span class="tool-tag ' + cls + '" onclick="toggleTool(\\'' + esc(t) + '\\')">' + esc(t) + '</span>';
+    }).join('') +
+    '</div></div>';
+
   editor.innerHTML =
     '<div class="form-row"><label>Key</label><input value="' + esc(activeProfileKey) + '" disabled /></div>' +
     '<div class="form-row"><label>Name</label><input id="pName" value="' + esc(p.name || '') + '" /></div>' +
     '<div class="form-row"><label>Description</label><input id="pDesc" value="' + esc(p.description || '') + '" /></div>' +
     '<div class="form-row"><label>Mode</label><select id="pMode">' + modes.map(m => '<option' + (m === p.permissionMode ? ' selected' : '') + '>' + m + '</option>').join('') + '</select></div>' +
     '<div class="form-row"><label>Skip Perms</label><input type="checkbox" id="pSkip"' + (p.dangerouslySkipPermissions ? ' checked' : '') + ' /></div>' +
-    '<div class="form-row"><label>Allowed</label><input id="pAllow" value="' + esc((p.allowedTools || []).join(', ')) + '" placeholder="Read, Edit, Write..." /></div>' +
-    '<div class="form-row"><label>Disallowed</label><input id="pDisallow" value="' + esc((p.disallowedTools || []).join(', ')) + '" placeholder="Bash, ..." /></div>' +
+    toolTagsHtml +
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
       '<button class="btn btn-danger btn-sm" onclick="deleteProfile()">Delete</button>' +
       '<button class="btn btn-primary btn-sm" onclick="saveProfile()">Save</button>' +
     '</div>';
+}
+
+function toggleTool(toolName) {
+  if (!activeProfileKey || !profiles[activeProfileKey]) return;
+  const p = profiles[activeProfileKey];
+  const allowed = new Set(p.allowedTools || []);
+  const disallowed = new Set(p.disallowedTools || []);
+
+  if (allowed.has(toolName)) {
+    // allowed → disallowed
+    allowed.delete(toolName);
+    disallowed.add(toolName);
+  } else if (disallowed.has(toolName)) {
+    // disallowed → unset
+    disallowed.delete(toolName);
+  } else {
+    // unset → allowed
+    allowed.add(toolName);
+  }
+
+  p.allowedTools = [...allowed];
+  p.disallowedTools = [...disallowed];
+  renderProfileEditor();
 }
 
 async function saveProfile() {
@@ -741,8 +826,8 @@ async function saveProfile() {
     description: document.getElementById('pDesc').value,
     permissionMode: document.getElementById('pMode').value,
     dangerouslySkipPermissions: document.getElementById('pSkip').checked,
-    allowedTools: document.getElementById('pAllow').value.split(',').map(s => s.trim()).filter(Boolean),
-    disallowedTools: document.getElementById('pDisallow').value.split(',').map(s => s.trim()).filter(Boolean),
+    allowedTools: profiles[activeProfileKey]?.allowedTools || [],
+    disallowedTools: profiles[activeProfileKey]?.disallowedTools || [],
   };
   await api('/api/permissions/' + activeProfileKey, { method: 'PUT', body: profile });
   loadProfiles();
@@ -762,6 +847,55 @@ async function createNewProfile() {
   await api('/api/permissions', { method: 'POST', body: { key, profile: { name: key, description: '', permissionMode: 'default', dangerouslySkipPermissions: false, allowedTools: [], disallowedTools: [] } } });
   activeProfileKey = key;
   loadProfiles();
+}
+
+async function duplicateProfile(key) {
+  const p = profiles[key];
+  if (!p) return;
+  const newKey = prompt('New profile key:', key + '-copy');
+  if (!newKey) return;
+  await api('/api/permissions', { method: 'POST', body: { key: newKey, profile: { ...p, name: (p.name || key) + ' (Copy)' } } });
+  activeProfileKey = newKey;
+  loadProfiles();
+}
+
+async function setDefaultProfile(key) {
+  await api('/api/config', { method: 'POST', body: { defaultPermissionProfile: key } });
+  window._cachedConfig = window._cachedConfig || {};
+  window._cachedConfig.defaultPermissionProfile = key;
+  renderProfileCards();
+}
+
+function exportProfiles() {
+  const data = JSON.stringify({ profiles }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'autoclaude-permissions.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importProfiles(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      const imported = data.profiles || {};
+      for (const [key, profile] of Object.entries(imported)) {
+        await api('/api/permissions', { method: 'POST', body: { key, profile } });
+      }
+      loadProfiles();
+      alert('Imported ' + Object.keys(imported).length + ' profile(s)');
+    } catch (err) {
+      alert('Import failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  input.value = '';
 }
 
 function populateProfileDropdowns() {
@@ -1225,6 +1359,7 @@ async function loadStatus() {
 // ─── Config ───
 async function loadApiConfig() {
   const data = await api('/api/config');
+  window._cachedConfig = data;
   if (data.claudeApi?.orgId) document.getElementById('orgIdInput').value = data.claudeApi.orgId;
   if (data.claudeApi?.sessionKeySet) document.getElementById('sessionKeyInput').placeholder = 'Cookie saved (hidden)';
 }
