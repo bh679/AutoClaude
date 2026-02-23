@@ -2,12 +2,13 @@ import { writeFileSync, existsSync } from 'node:fs';
 import { loadConfig } from './config.mjs';
 import { Scheduler, MODES } from './scheduler.mjs';
 import { checkCredits, fetchUsageFromApi, classifyUsage, CreditStatus } from './credit-monitor.mjs';
-import { getNextApprovedTask } from './task-queue.mjs';
+import { getNextApprovedTask, loadTasks } from './task-queue.mjs';
 import { TaskRunner } from './task-runner.mjs';
 import { notify } from './notifier.mjs';
-import { log } from './logger.mjs';
+import { log, onLog } from './logger.mjs';
 import { generateSummary } from './summary.mjs';
 import { recordPoll, recordTaskEvent, getGraphData, getCurrentUsageSummary } from './usage-monitor.mjs';
+import { broadcast } from './server.mjs';
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -32,6 +33,20 @@ export class Daemon {
     this.scheduler.onModeChange((oldMode, newMode) => {
       log('info', `Mode transition: ${oldMode} -> ${newMode}`);
       notify(`AutoClaude mode: ${newMode}`);
+      try {
+        broadcast('mode', { oldMode, newMode });
+        broadcast('status', this.getStatus());
+      } catch { /* broadcast not ready yet */ }
+    });
+
+    // Broadcast log entries (throttled to max 1/sec to avoid flooding)
+    this._lastLogBroadcast = 0;
+    onLog((entry) => {
+      const now = Date.now();
+      if (now - this._lastLogBroadcast > 1000) {
+        this._lastLogBroadcast = now;
+        try { broadcast('log', entry); } catch {}
+      }
     });
   }
 
@@ -113,8 +128,10 @@ export class Daemon {
       this._latestUsageRaw = apiData;
       this._latestUsageSummary = getCurrentUsageSummary(apiData);
       recordPoll(apiData);
+      try { broadcast('usage', this.getUsageData()); } catch {}
 
       const result = classifyUsage(apiData);
+      try { broadcast('credits', { creditsAvailable: result.status === CreditStatus.AVAILABLE, status: result.status, detail: result.detail }); } catch {}
 
       if (result.status === CreditStatus.AVAILABLE) {
         if (!this.creditsAvailable) {
@@ -126,8 +143,10 @@ export class Daemon {
         const task = getNextApprovedTask();
         if (task) {
           recordTaskEvent('task_start', task.title);
+          try { broadcast('task:started', { taskId: task.id, title: task.title }); broadcast('tasks', loadTasks()); broadcast('status', this.getStatus()); } catch {}
           await this.runner.runTask(task);
           recordTaskEvent('task_complete', task.title);
+          try { broadcast('task:completed', { taskId: task.id, title: task.title }); broadcast('tasks', loadTasks()); broadcast('status', this.getStatus()); } catch {}
         } else {
           log('info', 'All approved tasks completed. Waiting...');
           await sleep(config.creditCheck.pollIntervalMs * 2);
@@ -141,6 +160,7 @@ export class Daemon {
     } else {
       // Fallback to CLI check
       const result = await checkCredits();
+      try { broadcast('credits', { creditsAvailable: result.status === CreditStatus.AVAILABLE, status: result.status, detail: result.detail }); } catch {}
       if (result.status === CreditStatus.AVAILABLE) {
         if (!this.creditsAvailable) {
           log('info', 'Credits available (CLI check)!');
@@ -150,8 +170,10 @@ export class Daemon {
         const task = getNextApprovedTask();
         if (task) {
           recordTaskEvent('task_start', task.title);
+          try { broadcast('task:started', { taskId: task.id, title: task.title }); broadcast('tasks', loadTasks()); broadcast('status', this.getStatus()); } catch {}
           await this.runner.runTask(task);
           recordTaskEvent('task_complete', task.title);
+          try { broadcast('task:completed', { taskId: task.id, title: task.title }); broadcast('tasks', loadTasks()); broadcast('status', this.getStatus()); } catch {}
         } else {
           await sleep(config.creditCheck.pollIntervalMs * 2);
         }
