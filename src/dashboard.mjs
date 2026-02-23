@@ -1043,7 +1043,7 @@ function renderProjectCards() {
     (p.githubRepos || []).forEach(r => {
       const url = r.startsWith('http') ? r : 'https://github.com/' + r;
       const display = r.replace(/^https?:\\/\\/github\\.com\\//, '');
-      metaHtml += '<a class="project-meta-tag repo" href="' + esc(url) + '" target="_blank" style="text-decoration:none;cursor:pointer">\\u2693 ' + esc(display) + '</a>';
+      metaHtml += '<a class="project-meta-tag repo" href="' + esc(url) + '" target="_blank" style="text-decoration:none;cursor:pointer"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:-2px;margin-right:4px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>' + esc(display) + '</a>';
     });
 
     // Task list
@@ -1443,17 +1443,52 @@ async function loadSummary() {
   document.getElementById('summaryContent').textContent = data.content || 'No summary available yet.';
 }
 
+// ─── Server-Sent Events ───
+let sseConnected = false;
+
+function connectSSE() {
+  const evtSrc = new EventSource('/api/events');
+  evtSrc.addEventListener('connected', () => {
+    sseConnected = true;
+    console.log('SSE connected');
+  });
+  evtSrc.addEventListener('tasks', (e) => {
+    try { tasks = JSON.parse(e.data); renderTasks(); } catch {}
+  });
+  evtSrc.addEventListener('status', () => {
+    loadStatus();
+  });
+  evtSrc.addEventListener('permissions', (e) => {
+    try { permissions = JSON.parse(e.data); renderProfileCards(); } catch {}
+  });
+  evtSrc.addEventListener('projects', (e) => {
+    try { projects = JSON.parse(e.data); renderProjectCards(); } catch {}
+  });
+  evtSrc.onerror = () => {
+    sseConnected = false;
+    evtSrc.close();
+    // Reconnect after 3s
+    setTimeout(connectSSE, 3000);
+  };
+}
+
 // ─── Init & Polling ───
 async function init() {
   initTabFromHash();
   window.addEventListener('hashchange', initTabFromHash);
   await Promise.all([loadStatus(), loadTaskList(), loadProfiles(), loadProjectsList(), loadSessions(), loadApiConfig(), loadUsage(), loadLog(), loadSummary()]);
-  // Poll every 5 seconds
-  setInterval(() => { loadStatus(); loadTaskList(); }, 5000);
-  setInterval(loadProjectsList, 30000);
+
+  // Start SSE for real-time updates
+  connectSSE();
+
+  // Fallback polling (slower intervals since SSE handles real-time)
+  setInterval(() => { if (!sseConnected) { loadStatus(); loadTaskList(); } }, 5000);
+  setInterval(() => { if (!sseConnected) loadProjectsList(); else loadProjectsList(); }, 30000);
   setInterval(loadSessions, 15000);
   setInterval(loadLog, 10000);
   setInterval(loadUsage, 60000);
+  // Always poll status every 15s as a safety net even with SSE
+  setInterval(loadStatus, 15000);
 }
 
 init();

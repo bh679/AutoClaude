@@ -14,6 +14,29 @@ export function setDaemon(daemon) {
   _daemon = daemon;
 }
 
+// ─── Server-Sent Events ───
+
+const sseClients = new Set();
+
+export function broadcast(event, data) {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const client of sseClients) {
+    try { client.write(msg); } catch { sseClients.delete(client); }
+  }
+}
+
+function handleSSE(req, res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.write('event: connected\ndata: {}\n\n');
+  sseClients.add(res);
+  req.on('close', () => sseClients.delete(res));
+}
+
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -67,6 +90,11 @@ export function startServer() {
         return;
       }
 
+      // ─── SSE endpoint ───
+      if (url === '/api/events' && method === 'GET') {
+        return handleSSE(req, res);
+      }
+
       // ─── Tasks ───
       if (url === '/api/tasks' && method === 'GET') {
         return json(res, loadTasks());
@@ -74,11 +102,13 @@ export function startServer() {
       if (url === '/api/tasks' && method === 'POST') {
         const body = await parseBody(req);
         const task = createTask(body);
+        broadcast('tasks', loadTasks());
         return json(res, task, 201);
       }
       if (url === '/api/tasks/reorder' && method === 'PUT') {
         const body = await parseBody(req);
         const tasks = reorderTasks(body.orderedIds);
+        broadcast('tasks', tasks);
         return json(res, tasks);
       }
       if (url.startsWith('/api/tasks/') && method === 'PUT') {
@@ -92,11 +122,14 @@ export function startServer() {
           }
         }
         const task = updateTask(id, body);
+        if (task) broadcast('tasks', loadTasks());
         return task ? json(res, task) : json(res, { error: 'Not found' }, 404);
       }
       if (url.startsWith('/api/tasks/') && method === 'DELETE') {
         const id = extractParam(url, '/api/tasks/');
-        return deleteTask(id) ? json(res, { ok: true }) : json(res, { error: 'Not found' }, 404);
+        const ok = deleteTask(id);
+        if (ok) broadcast('tasks', loadTasks());
+        return ok ? json(res, { ok: true }) : json(res, { error: 'Not found' }, 404);
       }
 
       // ─── Permissions ───
@@ -106,17 +139,21 @@ export function startServer() {
       if (url === '/api/permissions' && method === 'POST') {
         const body = await parseBody(req);
         const profile = createPermissionProfile(body.key, body.profile);
+        broadcast('permissions', loadPermissions());
         return json(res, profile, 201);
       }
       if (url.startsWith('/api/permissions/') && method === 'PUT') {
         const key = extractParam(url, '/api/permissions/');
         const body = await parseBody(req);
         const profile = updatePermissionProfile(key, body);
+        if (profile) broadcast('permissions', loadPermissions());
         return profile ? json(res, profile) : json(res, { error: 'Not found' }, 404);
       }
       if (url.startsWith('/api/permissions/') && method === 'DELETE') {
         const key = extractParam(url, '/api/permissions/');
-        return deletePermissionProfile(key) ? json(res, { ok: true }) : json(res, { error: 'Not found' }, 404);
+        const ok = deletePermissionProfile(key);
+        if (ok) broadcast('permissions', loadPermissions());
+        return ok ? json(res, { ok: true }) : json(res, { error: 'Not found' }, 404);
       }
 
       // ─── Projects ───
@@ -126,6 +163,7 @@ export function startServer() {
       if (url === '/api/projects' && method === 'POST') {
         const body = await parseBody(req);
         const project = createProject(body);
+        broadcast('projects', listProjects());
         return json(res, project, 201);
       }
       if (url.startsWith('/api/projects/') && method === 'GET') {
@@ -137,11 +175,14 @@ export function startServer() {
         const id = extractParam(url, '/api/projects/');
         const body = await parseBody(req);
         const project = updateProject(id, body);
+        if (project) broadcast('projects', listProjects());
         return project ? json(res, project) : json(res, { error: 'Not found' }, 404);
       }
       if (url.startsWith('/api/projects/') && method === 'DELETE') {
         const id = extractParam(url, '/api/projects/');
-        return deleteProject(id) ? json(res, { ok: true }) : json(res, { error: 'Not found' }, 404);
+        const ok = deleteProject(id);
+        if (ok) broadcast('projects', listProjects());
+        return ok ? json(res, { ok: true }) : json(res, { error: 'Not found' }, 404);
       }
 
       // ─── Status ───
@@ -154,16 +195,19 @@ export function startServer() {
         const body = await parseBody(req);
         if (_daemon) _daemon.setSchedule(body);
         saveConfig({ schedule: body });
+        broadcast('status', _daemon?.getStatus() || { mode: 'WORK', running: false });
         return json(res, { ok: true });
       }
 
       // ─── Daemon control ───
       if (url === '/api/daemon/start' && method === 'POST') {
         if (_daemon) _daemon.start();
+        broadcast('status', _daemon?.getStatus() || { mode: 'WORK', running: true });
         return json(res, { ok: true });
       }
       if (url === '/api/daemon/stop' && method === 'POST') {
         if (_daemon) _daemon.stop();
+        broadcast('status', _daemon?.getStatus() || { mode: 'WORK', running: false });
         return json(res, { ok: true });
       }
 
