@@ -46,6 +46,7 @@ export class TaskRunner {
 
     updateTask(task.id, {
       status: 'running',
+      workflowStatus: 'dev',
       started: new Date().toISOString(),
       sessionId,
     });
@@ -139,6 +140,7 @@ export class TaskRunner {
           notify(`Task completed: ${task.title}`);
           updateTask(task.id, {
             status: 'completed',
+            workflowStatus: 'done',
             completed: new Date().toISOString(),
             stats,
           });
@@ -151,6 +153,7 @@ export class TaskRunner {
           notify(`Task failed: ${task.title}`);
           updateTask(task.id, {
             status: isCreditIssue ? 'pending' : 'failed',
+            workflowStatus: isCreditIssue ? 'scheduled' : 'failed',
             completed: isCreditIssue ? null : new Date().toISOString(),
             error: stderr.slice(-300),
             stats,
@@ -165,7 +168,7 @@ export class TaskRunner {
         this.isRunning = false;
         this.currentProcess = null;
         log('error', `Failed to spawn Claude for "${task.title}": ${err.message}`);
-        updateTask(task.id, { status: 'failed', error: err.message });
+        updateTask(task.id, { status: 'failed', workflowStatus: 'failed', error: err.message });
         resolve({ exitCode: -1, sessionId, duration: 0, stats: null });
       });
     });

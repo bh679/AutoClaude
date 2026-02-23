@@ -31,6 +31,8 @@ export function createTask({ title, prompt, dir, project = null, dependencies = 
     dependencies,
     status: 'pending',
     approved: false,
+    workflowStatus: 'idea',
+    needsInput: null,
     order: maxOrder + 1,
     permissionProfile,
     subagentLevel,
