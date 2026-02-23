@@ -215,6 +215,8 @@ export function getDashboardHtml() {
   .tab-btn.active .tab-badge { background: rgba(88,166,255,0.15); color: var(--accent); }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  #progressSpinner { display: inline-block; animation: spin 2s linear infinite; }
 </style>
 </head>
 <body>
@@ -244,6 +246,19 @@ export function getDashboardHtml() {
 <div class="container">
   <!-- Tasks Tab -->
   <div id="tab-tasks" class="tab-panel active">
+    <div id="progressPanel" style="display:none;margin-bottom:12px;padding:12px 16px;background:var(--bg2);border:1px solid var(--green);border-radius:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="color:var(--green);font-size:18px" id="progressSpinner">&#9881;</span>
+        <strong id="progressTitle" style="color:var(--green)">Running...</strong>
+        <span id="progressElapsed" style="color:var(--text2);margin-left:auto;font-size:12px"></span>
+      </div>
+      <div style="display:flex;gap:16px;font-size:12px;color:var(--text2);margin-bottom:6px">
+        <span>Tools: <b id="progressTools" style="color:var(--text)">0</b></span>
+        <span>Sub-agents: <b id="progressSubagents" style="color:var(--text)">0</b></span>
+        <span>Current: <b id="progressCurrentTool" style="color:var(--accent)">—</b></span>
+      </div>
+      <div id="progressActivity" style="font-size:11px;color:var(--text2);max-height:60px;overflow-y:auto;font-family:monospace"></div>
+    </div>
     <div class="section">
       <div class="section-header open" onclick="toggleSection(this)">
         <h2><span class="chevron">&#9654;</span> Task Queue <span id="taskCount" style="color:var(--text2);font-weight:400"></span></h2>
@@ -1391,6 +1406,11 @@ async function loadStatus() {
     if (uw) uw.value = status.schedule.wakeTime || '07:00';
     if (uwk) uwk.value = status.schedule.workTime || '09:00';
   }
+
+  // Hide progress panel if nothing running
+  if (!status.runner?.isRunning) {
+    renderProgress(null);
+  }
 }
 
 // ─── Config ───
@@ -1464,12 +1484,35 @@ function connectSSE() {
   evtSrc.addEventListener('projects', (e) => {
     try { projects = JSON.parse(e.data); renderProjectCards(); } catch {}
   });
+  evtSrc.addEventListener('progress', (e) => {
+    try { renderProgress(JSON.parse(e.data)); } catch {}
+  });
   evtSrc.onerror = () => {
     sseConnected = false;
     evtSrc.close();
     // Reconnect after 3s
     setTimeout(connectSSE, 3000);
   };
+}
+
+// ─── Progress Rendering ───
+function renderProgress(p) {
+  const panel = document.getElementById('progressPanel');
+  if (!p || !p.taskId) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  document.getElementById('progressTitle').textContent = 'Running: ' + (p.taskTitle || 'Task');
+  document.getElementById('progressElapsed').textContent = p.elapsedFormatted || '';
+  document.getElementById('progressTools').textContent = p.toolCount || 0;
+  document.getElementById('progressSubagents').textContent = p.subagentCount || 0;
+  document.getElementById('progressCurrentTool').textContent = p.currentTool || '—';
+  const actEl = document.getElementById('progressActivity');
+  if (p.recentActivity?.length) {
+    actEl.innerHTML = p.recentActivity.map(a => '<div>' + esc(a.slice(0, 150)) + '</div>').join('');
+    actEl.scrollTop = actEl.scrollHeight;
+  }
 }
 
 // ─── Init & Polling ───

@@ -1,6 +1,6 @@
 {
   "name": "autoclaude",
-  "version": "1.01.0003",
+  "version": "1.01.0004",
   "description": "Overnight Claude Code task runner with credit monitoring and web dashboard",
   "type": "module",
   "bin": {

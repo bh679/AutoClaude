@@ -185,6 +185,12 @@ export function startServer() {
         return ok ? json(res, { ok: true }) : json(res, { error: 'Not found' }, 404);
       }
 
+      // ─── Task Progress ───
+      if (url === '/api/tasks/current/progress' && method === 'GET') {
+        const progress = _daemon?.getProgress() || null;
+        return json(res, progress || { running: false });
+      }
+
       // ─── Status ───
       if (url === '/api/status' && method === 'GET') {
         return json(res, _daemon?.getStatus() || { mode: 'WORK', running: false });

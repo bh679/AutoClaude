@@ -8,6 +8,7 @@ import { notify } from './notifier.mjs';
 import { log } from './logger.mjs';
 import { generateSummary } from './summary.mjs';
 import { recordPoll, recordTaskEvent, getGraphData, getCurrentUsageSummary } from './usage-monitor.mjs';
+import { broadcast } from './server.mjs';
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -22,6 +23,9 @@ export class Daemon {
       workTime: config.schedule.workTime,
     });
     this.runner = new TaskRunner();
+    this.runner.onProgress = (progress) => {
+      try { broadcast('progress', progress); } catch {}
+    };
     this.creditsAvailable = false;
     this.sessionStartTime = new Date();
     this.summaryGenerated = false;
@@ -63,6 +67,10 @@ export class Daemon {
       sessionStartTime: this.sessionStartTime.toISOString(),
       summaryGenerated: this.summaryGenerated,
     };
+  }
+
+  getProgress() {
+    return this.runner.getProgress();
   }
 
   getUsageData() {

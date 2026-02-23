@@ -30,6 +30,9 @@ export class TaskRunner {
     this.currentTask = null;
     this.isRunning = false;
     this._streamData = [];
+    this._lastTool = null;
+    this._startTime = null;
+    this.onProgress = null; // callback: (progress) => void
   }
 
   async runTask(task) {
@@ -39,6 +42,8 @@ export class TaskRunner {
     this.currentTask = { ...task, sessionId };
     this.isRunning = true;
     this._streamData = [];
+    this._lastTool = null;
+    this._startTime = Date.now();
 
     log('info', `Starting task: "${task.title}" in ${task.dir}`);
     log('info', `Session ID: ${sessionId}`);
@@ -106,6 +111,7 @@ export class TaskRunner {
             const msg = JSON.parse(line);
             this._streamData.push(msg);
             if (msg.type === 'assistant' && msg.subtype === 'tool_use') {
+              this._lastTool = msg.tool_name || null;
               log('debug', `  Tool: ${msg.tool_name}`);
             }
           } catch { /* not all lines are valid JSON */ }
@@ -126,8 +132,17 @@ export class TaskRunner {
         }
       }, 60000);
 
+      // Broadcast progress every 3 seconds
+      const progressInterval = setInterval(() => {
+        if (this.onProgress) {
+          const progress = this.getProgress();
+          if (progress) this.onProgress(progress);
+        }
+      }, 3000);
+
       this.currentProcess.on('close', (code) => {
         clearInterval(watchdog);
+        clearInterval(progressInterval);
         this.isRunning = false;
         this.currentProcess = null;
 
@@ -223,6 +238,35 @@ export class TaskRunner {
         if (this.currentProcess) this.currentProcess.kill('SIGKILL');
       }, 5000);
     }
+  }
+
+  getProgress() {
+    if (!this.isRunning || !this.currentTask) return null;
+    const stats = this._extractStats();
+    const elapsed = Date.now() - (this._startTime || Date.now());
+    // Get recent log lines from stream data
+    const recentMessages = this._streamData.slice(-10).map(m => {
+      if (m.type === 'assistant') {
+        const content = m.message?.content || [];
+        for (const block of content) {
+          if (block.type === 'tool_use') return 'Tool: ' + (block.name || 'unknown');
+          if (block.type === 'text' && block.text) return block.text.slice(0, 120);
+        }
+      }
+      return null;
+    }).filter(Boolean);
+
+    return {
+      taskId: this.currentTask.id,
+      taskTitle: this.currentTask.title,
+      sessionId: this.currentTask.sessionId,
+      elapsed,
+      elapsedFormatted: Math.floor(elapsed / 60000) + 'm ' + Math.floor((elapsed % 60000) / 1000) + 's',
+      toolCount: stats.totalToolUses,
+      subagentCount: stats.subagentCount,
+      currentTool: this._lastTool || null,
+      recentActivity: recentMessages.slice(-5),
+    };
   }
 
   getStatus() {
