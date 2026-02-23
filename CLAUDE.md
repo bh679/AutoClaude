@@ -140,29 +140,45 @@ The user can search by name in the Desktop sidebar or paste the resume command i
 
 ### Architecture
 - **Entry point:** `bin/autoclaude.mjs` — starts HTTP server + daemon
-- **Dashboard:** `http://localhost:3457` — single HTML page served from `src/dashboard.mjs`
+- **Dashboard:** `http://localhost:3457` — single HTML page served from `packages/server/dashboard.mjs`
 - **Data dir:** `~/.autoclaude/` (tasks.json, permissions.json, config.json, state.json, usage-history.json)
 - **Config defaults:** `config/default.json`
-- **Source files:** 15 files in `src/`
+- **Packages:** 6 packages in `packages/` (npm workspaces, `@autoclaude/*` scope)
 
-### Key Source Files
+### Package Structure
 
-| File | Purpose |
-|------|---------|
-| `bin/autoclaude.mjs` | Entry point, starts server + daemon |
-| `src/server.mjs` | HTTP server, REST API routes |
-| `src/dashboard.mjs` | Single-file HTML dashboard (CSS + JS inline) |
-| `src/index.mjs` | Daemon class, main loop (SLEEP/WAKE/WORK modes) |
-| `src/config.mjs` | Config loading/saving, deep merge, paths |
-| `src/task-queue.mjs` | Task CRUD + permission profiles |
-| `src/task-runner.mjs` | Spawns claude CLI, stream-json parsing, stats |
-| `src/scheduler.mjs` | Bed/wake/work time scheduler, mode transitions |
-| `src/credit-monitor.mjs` | claude.ai API usage scraping + CLI fallback |
-| `src/usage-monitor.mjs` | Usage history, graph data, polling |
-| `src/session-tracker.mjs` | Scans active Claude Code sessions from desktop app |
-| `src/summary.mjs` | Overnight work summary generation |
-| `src/logger.mjs` | File + console logging |
-| `src/notifier.mjs` | macOS notifications via osascript |
+| Package | Path | Purpose | Depends on |
+|---------|------|---------|------------|
+| `@autoclaude/core` | `packages/core/` | Config, logging, notifications, scheduler | nothing |
+| `@autoclaude/sessions` | `packages/sessions/` | macOS Claude Code session scanning | nothing |
+| `@autoclaude/store` | `packages/store/` | Tasks, permissions, projects, usage, summaries | core, sessions |
+| `@autoclaude/runner` | `packages/runner/` | Task runner + credit monitor (subprocess/API) | core, store |
+| `@autoclaude/server` | `packages/server/` | HTTP API, SSE, dashboard frontend | core, store, sessions |
+| `@autoclaude/daemon` | `packages/daemon/` | Orchestration loop (SLEEP/WAKE/WORK) | core, store, runner |
+
+Each package has its own `CLAUDE.md` with scope, exports, and conventions. Read the relevant package's `CLAUDE.md` when working on that area.
+
+### Key Files
+
+| File | Package | Purpose |
+|------|---------|---------|
+| `bin/autoclaude.mjs` | (root) | Entry point, wires daemon + server |
+| `packages/server/server.mjs` | server | HTTP server, REST API routes |
+| `packages/server/dashboard.mjs` | server | Single-file HTML dashboard (CSS + JS inline) |
+| `packages/daemon/index.mjs` | daemon | Daemon class, main loop (SLEEP/WAKE/WORK modes) |
+| `packages/core/config.mjs` | core | Config loading/saving, deep merge, paths |
+| `packages/store/task-queue.mjs` | store | Task CRUD + permission profiles |
+| `packages/runner/task-runner.mjs` | runner | Spawns claude CLI, stream-json parsing, stats |
+| `packages/core/scheduler.mjs` | core | Bed/wake/work time scheduler, mode transitions |
+| `packages/runner/credit-monitor.mjs` | runner | claude.ai API usage scraping + CLI fallback |
+| `packages/store/usage-monitor.mjs` | store | Usage history, graph data, polling |
+| `packages/sessions/session-tracker.mjs` | sessions | Scans active Claude Code sessions from desktop app |
+| `packages/store/summary.mjs` | store | Overnight work summary generation |
+| `packages/core/logger.mjs` | core | File + console logging |
+| `packages/core/notifier.mjs` | core | macOS notifications via osascript |
+
+### Legacy `src/` Directory
+The `src/` directory contains the original monolithic source files. They are no longer used — all source has been moved to `packages/`. The `src/` directory will be removed in a future cleanup.
 
 ### Coding Standards
 Read this CLAUDE.md before implementing changes. Follow the constraints and conventions below.
@@ -170,10 +186,11 @@ Read this CLAUDE.md before implementing changes. Follow the constraints and conv
 ## Coding Standards
 
 ### Constraints
-- **Zero npm dependencies** — Node.js 18+ built-ins only (`node:fs`, `node:http`, `node:https`, `node:path`, `node:os`, `node:child_process`, `node:crypto`, `node:url`)
+- **Zero external npm dependencies** — Node.js 18+ built-ins only (`node:fs`, `node:http`, `node:https`, `node:path`, `node:os`, `node:child_process`, `node:crypto`, `node:url`). Internal `@autoclaude/*` workspace packages are OK.
 - **ES Modules** — all files use `.mjs` extension and `import`/`export`
-- **Single HTML dashboard** — the entire frontend (HTML, CSS, JS) lives in `src/dashboard.mjs` as a template literal string
+- **Single HTML dashboard** — the entire frontend (HTML, CSS, JS) lives in `packages/server/dashboard.mjs` as a template literal string
 - **Dark theme** — all UI uses the CSS custom properties defined in `getDashboardHtml()`
+- **npm workspaces** — packages import each other via `@autoclaude/core`, `@autoclaude/store`, etc. Run `npm install` after cloning to link workspaces.
 
 ### Conventions
 - Functions use `camelCase`
@@ -354,12 +371,12 @@ Never merge without explicit user approval via the Approve button.
 - **Use plan mode for ALL approval gates** — Gate 1 (plan), Gate 2 (testing), Gate 3 (merge). Always `EnterPlanMode` → write summary to plan file → `ExitPlanMode` → wait for Approve. Never proceed past a gate without the Approve button.
 - **Never merge without Gate 3 approval** — create the PR first, then present the diff summary in plan mode for approval.
 - **Check for existing project board items** before creating new ones — avoid duplicates.
-- **Zero dependencies** — never add npm packages. Use only Node.js built-in modules.
+- **Zero external dependencies** — never add external npm packages. Use only Node.js built-in modules and internal `@autoclaude/*` workspace packages.
 - **One feature per session** — don't mix features in a single session.
 - **Bump version on every commit** — use `V.MM.PPPP` format in `package.json`. Bump PPPP on every commit, bump MM on feature merge (resets PPPP). Read the current version, bump it, write it back, and include in the commit. On feature merge, also update README.md (when it exists) and create a git tag.
 - **Push after every commit** — always `git push` immediately after each commit. Don't batch commits locally.
 - **Commit as you go** — don't batch all changes into one big commit at the end. Commit after each logical change (new file, bug fix, refactor step). All changes must be committed and pushed before entering Gate 2.
-- **Dashboard is a single file** — all HTML, CSS, and JavaScript for the frontend must remain in `src/dashboard.mjs` as a template literal.
+- **Dashboard is a single file** — all HTML, CSS, and JavaScript for the frontend must remain in `packages/server/dashboard.mjs` as a template literal.
 - **Dark theme only** — use the existing CSS custom properties (--bg, --bg2, --text, --accent, etc.) for all UI additions.
 - When in doubt, ask the user.
 
