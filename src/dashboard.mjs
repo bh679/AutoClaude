@@ -591,12 +591,39 @@ function renderTasks() {
         '</span>';
     }
 
-    // Session info
+    // Session info + execution history
     let sessionHtml = '';
     if (t.sessionId) {
       sessionHtml = '<div class="task-session">' +
         '<span>Session:</span>' +
-        '<code onclick="copyResume(\\'' + t.sessionId + '\\')" title="Click to copy resume command">' + t.sessionId.slice(0, 8) + '...</code>' +
+        '<code onclick="copyResume(\\'' + t.sessionId + '\\')" title="Click to copy resume command" style="cursor:pointer">' + t.sessionId.slice(0, 8) + '...</code>' +
+        '<button class="btn btn-sm" onclick="event.stopPropagation();copyResume(\\'' + t.sessionId + '\\')" style="font-size:10px;padding:1px 6px" title="Copy: claude --resume ' + t.sessionId + '">Resume</button>' +
+      '</div>';
+    }
+
+    // Execution history
+    let historyHtml = '';
+    if (t.started || t.completed) {
+      const startDate = t.started ? new Date(t.started) : null;
+      const endDate = t.completed ? new Date(t.completed) : null;
+      const duration = startDate && endDate ? Math.round((endDate - startDate) / 1000) : null;
+      const durationStr = duration !== null ? (duration >= 60 ? Math.floor(duration / 60) + 'm ' + (duration % 60) + 's' : duration + 's') : '';
+      historyHtml = '<div class="stats-row" style="font-size:11px">' +
+        (startDate ? '<span>Started: ' + startDate.toLocaleTimeString() + '</span>' : '') +
+        (endDate ? '<span>Ended: ' + endDate.toLocaleTimeString() + '</span>' : '') +
+        (durationStr ? '<span>Duration: ' + durationStr + '</span>' : '') +
+      '</div>';
+    }
+    if (t.error) {
+      historyHtml += '<div style="font-size:11px;color:var(--red);margin-top:4px;font-family:monospace;white-space:pre-wrap;max-height:60px;overflow-y:auto">' + esc(t.error) + '</div>';
+    }
+
+    // Action buttons for completed/failed tasks
+    let actionHtml = '';
+    if (t.status === 'completed' || t.status === 'failed') {
+      actionHtml = '<div class="stats-row" style="margin-top:4px;gap:6px">' +
+        '<button class="btn btn-sm" onclick="event.stopPropagation();requeueTask(\\'' + t.id + '\\')" style="font-size:10px;padding:1px 8px">Re-queue</button>' +
+        '<button class="btn btn-sm" onclick="event.stopPropagation();duplicateTask(\\'' + t.id + '\\')" style="font-size:10px;padding:1px 8px">Duplicate</button>' +
       '</div>';
     }
 
@@ -663,7 +690,9 @@ function renderTasks() {
               (done ? '\\u2713' : '\\u23f3') + ' ' + esc(dep?.title || 'Unknown') + ' \\u00d7</span>';
           }).join('') + '</div>' : '') +
         sessionHtml +
+        historyHtml +
         statsHtml +
+        actionHtml +
       '</div>' +
     '</div>';
   }).join('');
@@ -677,6 +706,16 @@ function copyResume(sessionId) {
   const orig = el.textContent;
   el.textContent = 'Copied!';
   setTimeout(() => { el.textContent = orig; }, 1500);
+}
+
+async function requeueTask(id) {
+  await api('/api/tasks/' + id + '/requeue', { method: 'POST' });
+  loadTaskList();
+}
+
+async function duplicateTask(id) {
+  await api('/api/tasks/' + id + '/duplicate', { method: 'POST' });
+  loadTaskList();
 }
 
 async function toggleApprove(id) {

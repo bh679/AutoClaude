@@ -125,6 +125,22 @@ export function startServer() {
         if (task) broadcast('tasks', loadTasks());
         return task ? json(res, task) : json(res, { error: 'Not found' }, 404);
       }
+      if (url.match(/^\/api\/tasks\/[^/]+\/requeue$/) && method === 'POST') {
+        const id = url.split('/')[3];
+        const task = loadTasks().find(t => t.id === id);
+        if (!task) return json(res, { error: 'Not found' }, 404);
+        const updated = updateTask(id, { status: 'pending', started: null, completed: null, error: null, stats: null, sessionId: null });
+        broadcast('tasks', loadTasks());
+        return json(res, updated);
+      }
+      if (url.match(/^\/api\/tasks\/[^/]+\/duplicate$/) && method === 'POST') {
+        const id = url.split('/')[3];
+        const source = loadTasks().find(t => t.id === id);
+        if (!source) return json(res, { error: 'Not found' }, 404);
+        const dup = createTask({ title: source.title + ' (copy)', prompt: source.prompt, dir: source.dir, project: source.project, permissionProfile: source.permissionProfile, subagentLevel: source.subagentLevel, dependencies: source.dependencies });
+        broadcast('tasks', loadTasks());
+        return json(res, dup, 201);
+      }
       if (url.startsWith('/api/tasks/') && method === 'DELETE') {
         const id = extractParam(url, '/api/tasks/');
         const ok = deleteTask(id);
