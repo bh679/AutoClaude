@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { execSync } from 'node:child_process';
+import { loadTasks, createTask } from './task-queue.mjs';
 
 const CLAUDE_DIR = join(homedir(), '.claude');
 const DESKTOP_SESSIONS_DIR = join(homedir(), 'Library', 'Application Support', 'Claude', 'claude-code-sessions');
@@ -87,6 +88,7 @@ export function scanActiveSessions() {
   // 3. Merge desktop metadata with running status
   for (const ds of desktopSessions) {
     const isRunning = runningSessionIds.has(ds.cliSessionId);
+    const sshConfig = ds.sshConfig && ds.sshConfig.sshHost ? ds.sshConfig : null;
     sessions.push({
       id: ds.sessionId,
       cliSessionId: ds.cliSessionId,
@@ -97,6 +99,8 @@ export function scanActiveSessions() {
       permissionMode: ds.permissionMode,
       isArchived: ds.isArchived,
       isRunning,
+      sshConfig,
+      instanceKey: computeInstanceKey({ sshConfig }),
       createdAt: ds.createdAt ? new Date(ds.createdAt).toISOString() : null,
       lastActivityAt: ds.lastActivityAt ? new Date(ds.lastActivityAt).toISOString() : null,
       todos: [],
@@ -179,4 +183,47 @@ export function getSessionTodos(sessionId) {
     } catch { /* skip */ }
   }
   return allTodos;
+}
+
+// ─── Instance Key Computation ───
+
+export function computeInstanceKey(session) {
+  if (session.sshConfig && session.sshConfig.sshHost) {
+    const port = session.sshConfig.sshPort || 22;
+    return 'ssh:' + session.sshConfig.sshHost + ':' + port;
+  }
+  return 'local';
+}
+
+// ─── Auto-Register Sessions as Tasks ───
+
+export function autoRegisterSessions(sessions) {
+  const tasks = loadTasks();
+  const newTasks = [];
+
+  for (const session of sessions) {
+    if (session.isArchived) continue;
+
+    // Check if a task already exists for this cliSessionId
+    const hasTask = tasks.some(t =>
+      t.cliSessionId === session.cliSessionId ||
+      t.sessionId === session.cliSessionId
+    );
+    if (hasTask) continue;
+
+    try {
+      const task = createTask({
+        title: session.title || 'Untitled Session',
+        prompt: 'Auto-registered from Claude Code session. CWD: ' + (session.cwd || 'unknown'),
+        dir: session.cwd || process.cwd(),
+        source: 'auto-registered',
+        cliSessionId: session.cliSessionId,
+      });
+      newTasks.push(task);
+      // Update local tasks array to prevent duplicates within same batch
+      tasks.push(task);
+    } catch { /* skip on error */ }
+  }
+
+  return newTasks;
 }

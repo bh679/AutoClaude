@@ -46,6 +46,7 @@ export function loadConfig(forceReload = false) {
     logFile: join(DATA_DIR, 'autoclaude.log'),
     usageHistoryFile: join(DATA_DIR, 'usage-history.json'),
     projectsFile: join(DATA_DIR, 'projects.json'),
+    instancesFile: join(DATA_DIR, 'instances.json'),
     summaryDir: join(DATA_DIR, 'summaries'),
   };
 
