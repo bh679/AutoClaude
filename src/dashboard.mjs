@@ -225,9 +225,12 @@ export function getDashboardHtml() {
   <div class="header-left">
     <h1>AutoClaude</h1>
     <span id="statusBadge" class="status-badge status-WORK"><span class="dot"></span><span id="statusText">WORK</span></span>
+    <span id="runningTask" style="font-size:12px;color:var(--green);display:none">&#9881; <span id="runningTaskName"></span></span>
     <span id="creditStatus" style="font-size:12px;color:var(--text2)"></span>
+    <span id="nextEvent" style="font-size:11px;color:var(--text2);display:none">Next: <span id="nextEventText"></span></span>
   </div>
   <div class="header-controls">
+    <input type="text" id="globalSearch" placeholder="Search tasks, projects, sessions..." oninput="globalFilter(this.value)" style="width:200px;font-size:12px;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
     <div class="time-input"><span>Bed</span><input type="text" id="bedTime" value="23:00" maxlength="5" placeholder="HH:MM" onfocus="this.select()" onblur="validateTime(this)"></div>
     <div class="time-input"><span>Wake</span><input type="text" id="wakeTime" value="07:00" maxlength="5" placeholder="HH:MM" onfocus="this.select()" onblur="validateTime(this)"></div>
     <div class="time-input"><span>Work</span><input type="text" id="workTime" value="09:00" maxlength="5" placeholder="HH:MM" onfocus="this.select()" onblur="validateTime(this)"></div>
@@ -560,7 +563,8 @@ function renderTasks() {
   updateTabBadges();
 
   const pendingTasks = tasks.filter(t => t.status === 'pending');
-  list.innerHTML = tasks.map((t, idx) => {
+  const filtered = _searchQuery ? tasks.filter(t => (t.title + ' ' + t.prompt + ' ' + t.dir + ' ' + (t.sessionId || '')).toLowerCase().includes(_searchQuery)) : tasks;
+  list.innerHTML = filtered.map((t, idx) => {
     const statusClass = t.status === 'running' ? 'running' : t.status === 'completed' ? 'completed' : t.status === 'failed' ? 'failed' : '';
     const approveClass = t.approved ? 'approved' : 'unapproved';
     const approveText = t.approved ? '\\u2713 Approved' : '\\u2717 Unapproved';
@@ -1081,10 +1085,11 @@ function renderProjectCards() {
     return;
   }
 
+  const filteredProjects = _searchQuery ? projects.filter(p => (p.name + ' ' + (p.description||'') + ' ' + (p.mainDir||'')).toLowerCase().includes(_searchQuery)) : projects;
   const activityColors = { active: 'var(--green)', idle: 'var(--orange)', complete: 'var(--accent)', empty: 'var(--text3)' };
   const activityLabels = { active: 'Active', idle: 'Idle', complete: 'Complete', empty: 'No tasks' };
 
-  container.innerHTML = projects.map(p => {
+  container.innerHTML = filteredProjects.map(p => {
     const color = activityColors[p.activityStatus] || 'var(--text3)';
     const label = activityLabels[p.activityStatus] || 'Unknown';
     const ptasks = p.tasks || [];
@@ -1422,13 +1427,24 @@ async function loadStatus() {
   badge.className = 'status-badge status-' + mode;
   text.textContent = mode;
 
+  // Running task in header
+  const runEl = document.getElementById('runningTask');
+  const runName = document.getElementById('runningTaskName');
   if (status.runner?.isRunning) {
-    credit.textContent = 'Running: ' + (status.runner.currentTask || '');
-  } else if (status.creditsAvailable) {
-    credit.textContent = 'Credits available';
+    runEl.style.display = 'inline';
+    runName.textContent = status.runner.currentTask || 'Task';
+    credit.textContent = '';
   } else {
-    credit.textContent = status.schedule?.running ? 'Waiting for credits...' : '';
+    runEl.style.display = 'none';
+    if (status.creditsAvailable) {
+      credit.textContent = 'Credits available';
+    } else {
+      credit.textContent = status.schedule?.running ? 'Waiting for credits...' : '';
+    }
   }
+
+  // Next event countdown
+  updateNextEvent(status.schedule);
 
   btn.textContent = status.schedule?.running ? 'Stop' : 'Start';
   btn.className = status.schedule?.running ? 'btn btn-danger' : 'btn btn-primary';
@@ -1532,6 +1548,44 @@ function connectSSE() {
     // Reconnect after 3s
     setTimeout(connectSSE, 3000);
   };
+}
+
+// ─── Next Event Countdown ───
+function updateNextEvent(schedule) {
+  const el = document.getElementById('nextEvent');
+  const textEl = document.getElementById('nextEventText');
+  if (!schedule || !schedule.running) { el.style.display = 'none'; return; }
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const times = [
+    { label: 'Bed', time: schedule.bedTime },
+    { label: 'Wake', time: schedule.wakeTime },
+    { label: 'Work', time: schedule.workTime },
+  ].map(t => {
+    let d = new Date(today + 'T' + t.time + ':00');
+    if (d <= now) d = new Date(d.getTime() + 86400000);
+    return { ...t, date: d };
+  }).sort((a, b) => a.date - b.date);
+  const next = times[0];
+  if (!next) { el.style.display = 'none'; return; }
+  const diff = next.date - now;
+  const hrs = Math.floor(diff / 3600000);
+  const mins = Math.floor((diff % 3600000) / 60000);
+  textEl.textContent = next.label + ' in ' + (hrs > 0 ? hrs + 'h ' : '') + mins + 'm';
+  el.style.display = 'inline';
+}
+
+// ─── Global Search ───
+let _searchQuery = '';
+function globalFilter(query) {
+  _searchQuery = query.toLowerCase().trim();
+  renderTasks();
+  renderProjectCards();
+  // Filter locations
+  const cards = document.querySelectorAll('.loc-card');
+  cards.forEach(c => {
+    c.style.display = !_searchQuery || c.textContent.toLowerCase().includes(_searchQuery) ? '' : 'none';
+  });
 }
 
 // ─── Progress Rendering ───
