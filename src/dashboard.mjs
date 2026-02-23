@@ -221,7 +221,7 @@ export function getDashboardHtml() {
 
 <div class="header">
   <div class="header-left">
-    <h1>AutoClaude</h1>
+    <h1>AutoClaude<span id="sseIndicator" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--text3);margin-left:6px;vertical-align:middle" title="Polling mode"></span></h1>
     <span id="statusBadge" class="status-badge status-WORK"><span class="dot"></span><span id="statusText">WORK</span></span>
     <span id="creditStatus" style="font-size:12px;color:var(--text2)"></span>
   </div>
@@ -1406,17 +1406,207 @@ async function loadSummary() {
   document.getElementById('summaryContent').textContent = data.content || 'No summary available yet.';
 }
 
+// ─── SSE Real-Time Connection ───
+let eventSource = null;
+let sseConnected = false;
+let statusPollId = null;
+let logPollId = null;
+let sessionPollId = null;
+let usagePollId = null;
+
+function connectSSE() {
+  if (eventSource) { try { eventSource.close(); } catch {} }
+
+  eventSource = new EventSource(API + '/api/events');
+
+  eventSource.addEventListener('connected', () => {
+    sseConnected = true;
+    updateSSEIndicator();
+    // Reduce polling when SSE is active
+    adjustPolling(true);
+  });
+
+  eventSource.addEventListener('tasks', (e) => {
+    try {
+      tasks = JSON.parse(e.data);
+      tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+      renderTasks();
+    } catch {}
+  });
+
+  eventSource.addEventListener('status', (e) => {
+    try {
+      const status = JSON.parse(e.data);
+      renderStatusFromData(status);
+    } catch {}
+  });
+
+  eventSource.addEventListener('permissions', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      profiles = data.profiles || data;
+      renderProfileCards();
+      populateProfileDropdowns();
+    } catch {}
+  });
+
+  eventSource.addEventListener('projects', (e) => {
+    try {
+      projects = JSON.parse(e.data);
+      renderProjectCards();
+      populateProjectDropdowns();
+      updateTabBadges();
+    } catch {}
+  });
+
+  eventSource.addEventListener('log', (e) => {
+    try {
+      const entry = JSON.parse(e.data);
+      appendLogEntry(entry);
+    } catch {}
+  });
+
+  eventSource.addEventListener('mode', (e) => {
+    try {
+      const { newMode } = JSON.parse(e.data);
+      const badge = document.getElementById('statusBadge');
+      const text = document.getElementById('statusText');
+      if (badge) badge.className = 'status-badge status-' + newMode;
+      if (text) text.textContent = newMode;
+    } catch {}
+  });
+
+  eventSource.addEventListener('usage', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      renderUsage(data);
+    } catch {}
+  });
+
+  eventSource.addEventListener('credits', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      const credit = document.getElementById('creditStatus');
+      if (credit) {
+        credit.textContent = data.creditsAvailable ? 'Credits available' : 'Credits: ' + (data.status || 'checking');
+      }
+    } catch {}
+  });
+
+  eventSource.addEventListener('heartbeat', () => {
+    // Connection alive — no action needed
+  });
+
+  eventSource.onerror = () => {
+    sseConnected = false;
+    updateSSEIndicator();
+    // Fall back to full polling
+    adjustPolling(false);
+    // EventSource will auto-reconnect
+  };
+}
+
+function updateSSEIndicator() {
+  const indicator = document.getElementById('sseIndicator');
+  if (!indicator) return;
+  indicator.style.background = sseConnected ? 'var(--green)' : 'var(--text3)';
+  indicator.title = sseConnected ? 'Real-time connected' : 'Polling mode';
+  if (sseConnected) {
+    indicator.style.boxShadow = '0 0 4px var(--green)';
+  } else {
+    indicator.style.boxShadow = 'none';
+  }
+}
+
+function adjustPolling(sseActive) {
+  // Clear existing intervals
+  if (statusPollId) clearInterval(statusPollId);
+  if (logPollId) clearInterval(logPollId);
+  if (sessionPollId) clearInterval(sessionPollId);
+  if (usagePollId) clearInterval(usagePollId);
+
+  if (sseActive) {
+    // SSE handles tasks, status, permissions, projects, log, usage, credits in real-time
+    // Keep infrequent safety-net polls only
+    statusPollId = setInterval(() => { loadStatus(); loadTaskList(); }, 60000);
+    logPollId = setInterval(loadLog, 60000);
+    sessionPollId = setInterval(loadSessions, 30000);
+    usagePollId = setInterval(loadUsage, 120000);
+  } else {
+    // Full polling fallback
+    statusPollId = setInterval(() => { loadStatus(); loadTaskList(); }, 5000);
+    logPollId = setInterval(loadLog, 10000);
+    sessionPollId = setInterval(loadSessions, 15000);
+    usagePollId = setInterval(loadUsage, 60000);
+  }
+}
+
+function renderStatusFromData(status) {
+  const badge = document.getElementById('statusBadge');
+  const text = document.getElementById('statusText');
+  const credit = document.getElementById('creditStatus');
+  const btn = document.getElementById('startStopBtn');
+
+  const mode = status.schedule?.currentMode || 'WORK';
+  if (badge) badge.className = 'status-badge status-' + mode;
+  if (text) text.textContent = mode;
+
+  if (credit) {
+    if (status.runner?.isRunning) {
+      credit.textContent = 'Running: ' + (status.runner.currentTask || '');
+    } else if (status.creditsAvailable) {
+      credit.textContent = 'Credits available';
+    } else {
+      credit.textContent = status.schedule?.running ? 'Waiting for credits...' : '';
+    }
+  }
+
+  if (btn) {
+    btn.textContent = status.schedule?.running ? 'Stop' : 'Start';
+    btn.className = status.schedule?.running ? 'btn btn-danger' : 'btn btn-primary';
+  }
+
+  // Populate schedule inputs
+  if (status.schedule) {
+    const fields = [
+      ['bedTime', 'bedTime'], ['wakeTime', 'wakeTime'], ['workTime', 'workTime'],
+      ['bedTime', 'usageBedTime'], ['wakeTime', 'usageWakeTime'], ['workTime', 'usageWorkTime'],
+    ];
+    for (const [key, id] of fields) {
+      const el = document.getElementById(id);
+      if (el && status.schedule[key]) el.value = status.schedule[key];
+    }
+  }
+}
+
+function appendLogEntry(entry) {
+  const logEl = document.getElementById('logOutput');
+  if (!logEl) return;
+  const line = '[' + (entry.timestamp || new Date().toISOString()) + '] [' + (entry.level || 'info').toUpperCase().padEnd(5) + '] ' + (entry.message || '');
+  if (logEl.textContent === 'Loading...') {
+    logEl.textContent = line;
+  } else {
+    logEl.textContent += '\\n' + line;
+  }
+  // Auto-scroll to bottom
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
 // ─── Init & Polling ───
 async function init() {
   initTabFromHash();
   window.addEventListener('hashchange', initTabFromHash);
   await Promise.all([loadStatus(), loadTaskList(), loadProfiles(), loadProjectsList(), loadSessions(), loadApiConfig(), loadUsage(), loadLog(), loadSummary()]);
-  // Poll every 5 seconds
-  setInterval(() => { loadStatus(); loadTaskList(); }, 5000);
+
+  // Start SSE connection for real-time updates
+  connectSSE();
+
+  // Start polling (will be reduced when SSE connects)
+  statusPollId = setInterval(() => { loadStatus(); loadTaskList(); }, 5000);
   setInterval(loadProjectsList, 30000);
-  setInterval(loadSessions, 15000);
-  setInterval(loadLog, 10000);
-  setInterval(loadUsage, 60000);
+  sessionPollId = setInterval(loadSessions, 15000);
+  logPollId = setInterval(loadLog, 10000);
+  usagePollId = setInterval(loadUsage, 60000);
 }
 
 init();
