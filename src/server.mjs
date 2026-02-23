@@ -5,8 +5,11 @@ import { listProjects, getProject, createProject, updateProject, deleteProject }
 import { getRecentLogs } from './logger.mjs';
 import { log } from './logger.mjs';
 import { getLatestSummary } from './summary.mjs';
-import { scanActiveSessions } from './session-tracker.mjs';
+import { scanActiveSessions, autoRegisterSessions } from './session-tracker.mjs';
+import { getInstancesWithSessions, renameInstance } from './instances.mjs';
 import { getDashboardHtml } from './dashboard.mjs';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 let _daemon = null; // set by index.mjs
 
@@ -80,6 +83,23 @@ export function startServer() {
         const body = await parseBody(req);
         const tasks = reorderTasks(body.orderedIds);
         return json(res, tasks);
+      }
+      // Task progress push (must be before generic /api/tasks/:id PUT)
+      if (url.match(/^\/api\/tasks\/[^/]+\/progress$/) && method === 'POST') {
+        const pathParts = url.split('/');
+        const id = pathParts[3];
+        const body = await parseBody(req);
+        const task = loadTasks().find(t => t.id === id);
+        if (!task) return json(res, { error: 'Not found' }, 404);
+        const update = {
+          timestamp: new Date().toISOString(),
+          status: body.status || 'update',
+          message: body.message || '',
+        };
+        const progressUpdates = task.progressUpdates || [];
+        progressUpdates.push(update);
+        updateTask(id, { progressUpdates });
+        return json(res, { ok: true, update });
       }
       if (url.startsWith('/api/tasks/') && method === 'PUT') {
         const id = extractParam(url, '/api/tasks/');
@@ -165,6 +185,39 @@ export function startServer() {
         return json(res, scanActiveSessions());
       }
 
+      // ─── Instances (sessions grouped by machine) ───
+      if (url === '/api/instances' && method === 'GET') {
+        const sessions = scanActiveSessions();
+        const tasks = loadTasks();
+        autoRegisterSessions(sessions);
+        const instances = getInstancesWithSessions(sessions, loadTasks());
+        return json(res, instances);
+      }
+      if (url.startsWith('/api/instances/') && method === 'PUT') {
+        const key = decodeURIComponent(extractParam(url, '/api/instances/'));
+        const body = await parseBody(req);
+        const result = renameInstance(key, body.customName);
+        return json(res, result);
+      }
+
+      // ─── Session Registration (from CLAUDE.md push) ───
+      if (url === '/api/sessions/register' && method === 'POST') {
+        const body = await parseBody(req);
+        if (!body.cliSessionId) return json(res, { error: 'cliSessionId required' }, 400);
+        const tasks = loadTasks();
+        let task = tasks.find(t => t.cliSessionId === body.cliSessionId);
+        if (!task) {
+          task = createTask({
+            title: body.title || 'Registered Session',
+            prompt: body.prompt || 'Session registered via API. CWD: ' + (body.cwd || 'unknown'),
+            dir: body.cwd || process.cwd(),
+            source: 'auto-registered',
+            cliSessionId: body.cliSessionId,
+          });
+        }
+        return json(res, task);
+      }
+
       // ─── Usage ───
       if (url === '/api/usage' && method === 'GET') {
         return json(res, _daemon?.getUsageData() || {});
@@ -224,6 +277,46 @@ export function startServer() {
   server.listen(port, host, () => {
     log('info', `Dashboard running at http://${host}:${port}`);
   });
+
+  // Generate shared CLAUDE.md for integration
+  try {
+    const claudeMdPath = join(config.paths.dataDir, 'CLAUDE.md');
+    const claudeMdContent = `# AutoClaude Integration
+
+## Auto-Registration
+At the start of every session, register with AutoClaude to track your work:
+
+\`\`\`bash
+# Discover your session ID (most recent JSONL file)
+SESSION_ID=$(stat -f "%B %N" ~/.claude/projects/*/*.jsonl 2>/dev/null | sort -n | tail -1 | awk '{print $2}' | xargs -I{} basename {} .jsonl)
+
+# Register with AutoClaude dashboard
+curl -s -X POST http://${host}:${port}/api/sessions/register \\
+  -H "Content-Type: application/json" \\
+  -d "{\\"cliSessionId\\":\\"$SESSION_ID\\",\\"title\\":\\"$(basename $(pwd))\\",\\"cwd\\":\\"$(pwd)\\"}"
+\`\`\`
+
+## Progress Updates
+Push progress updates during your session:
+
+\`\`\`bash
+curl -s -X POST http://${host}:${port}/api/tasks/TASK_ID/progress \\
+  -H "Content-Type: application/json" \\
+  -d '{"status":"in-progress","message":"Description of current work"}'
+\`\`\`
+
+## Status Codes
+- \`planning\` - Exploring codebase, designing solution
+- \`in-progress\` - Actively implementing
+- \`testing\` - Running tests
+- \`blocked\` - Waiting for input or dependency
+- \`completed\` - Task finished
+`;
+    writeFileSync(claudeMdPath, claudeMdContent);
+    log('info', 'Generated shared CLAUDE.md at ' + claudeMdPath);
+  } catch (err) {
+    log('warn', 'Failed to generate shared CLAUDE.md: ' + err.message);
+  }
 
   return server;
 }
