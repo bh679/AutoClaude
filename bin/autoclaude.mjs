@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
-import { Daemon } from '../src/index.mjs';
-import { startServer, setDaemon } from '../src/server.mjs';
-import { loadConfig } from '../src/config.mjs';
-import { log } from '../src/logger.mjs';
+import { Daemon } from '@autoclaude/daemon';
+import { startServer, setDaemon } from '@autoclaude/server';
+import { loadConfig, log } from '@autoclaude/core';
 
 const config = loadConfig();
 
